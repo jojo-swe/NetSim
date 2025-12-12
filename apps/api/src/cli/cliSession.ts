@@ -1,4 +1,4 @@
-import type { Device } from "../sim/types.js";
+import type { Device, StaticRouteConfig } from "../sim/types.js";
 
 type WorldLike = {
   isInterfaceOperUp(deviceId: string, interfaceName: string): boolean;
@@ -128,6 +128,40 @@ export class CliSession {
         return { output: "", prompt: this.getPrompt() };
       }
 
+      if (lower.startsWith("ip route ")) {
+        const rest = line.substring("ip route ".length).trim();
+        const [destination, mask, nextHop] = rest.split(" ");
+        if (!destination || !mask || !nextHop) {
+          return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+        }
+        if (!Array.isArray((this.device.config as any).staticRoutes)) {
+          (this.device.config as any).staticRoutes = [];
+        }
+        const route: StaticRouteConfig = { destination, mask, nextHop };
+        const exists = this.device.config.staticRoutes.some(
+          (r) => r.destination === destination && r.mask === mask && r.nextHop === nextHop
+        );
+        if (!exists) {
+          this.device.config.staticRoutes.push(route);
+        }
+        return { output: "", prompt: this.getPrompt() };
+      }
+
+      if (lower.startsWith("no ip route ")) {
+        const rest = line.substring("no ip route ".length).trim();
+        const [destination, mask, nextHop] = rest.split(" ");
+        if (!destination || !mask || !nextHop) {
+          return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+        }
+        if (!Array.isArray((this.device.config as any).staticRoutes)) {
+          (this.device.config as any).staticRoutes = [];
+        }
+        this.device.config.staticRoutes = this.device.config.staticRoutes.filter(
+          (r) => !(r.destination === destination && r.mask === mask && r.nextHop === nextHop)
+        );
+        return { output: "", prompt: this.getPrompt() };
+      }
+
       return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
     }
 
@@ -191,6 +225,13 @@ export class CliSession {
       }
       if (!iface.adminUp) {
         lines.push(" shutdown");
+      }
+      lines.push("!");
+    }
+
+    if (this.device.config.staticRoutes.length > 0) {
+      for (const route of this.device.config.staticRoutes) {
+        lines.push(`ip route ${route.destination} ${route.mask} ${route.nextHop}`);
       }
       lines.push("!");
     }

@@ -320,7 +320,7 @@ export class World {
         if (!inSameSubnet(nextHopIp, nh.mask, srcIface.ipv4Address)) continue;
         if (!this.l2Reachable(srcEp, nh.ep)) continue;
         const nextOrigin = originSourceIp ?? srcIface.ipv4Address;
-        const hop = this.routeToIp(nh.ep.deviceId, targetIp, maxHops - 1, visited, nextOrigin);
+        const hop = this.routeToIp(nh.ep.deviceId, targetIp, maxHops - 1, new Set(visited), nextOrigin);
         if (hop.ok) return hop;
       }
     }
