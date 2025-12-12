@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "createdAt": "2025-12-12T00:00:00.000Z",
+  "topology": {
+    "nodes": [
+      {
+        "id": "R1",
+        "type": "device",
+        "position": { "x": 120, "y": 120 },
+        "data": { "label": "Router R1", "deviceId": "R1" }
+      },
+      {
+        "id": "R2",
+        "type": "device",
+        "position": { "x": 360, "y": 120 },
+        "data": { "label": "Router R2", "deviceId": "R2" }
+      },
+      {
+        "id": "R3",
+        "type": "device",
+        "position": { "x": 600, "y": 120 },
+        "data": { "label": "Router R3", "deviceId": "R3" }
+      },
+      {
+        "id": "SW1",
+        "type": "device",
+        "position": { "x": 600, "y": 280 },
+        "data": { "label": "Switch SW1", "deviceId": "SW1" }
+      }
+    ],
+    "edges": [
+      { "id": "e-r1-r2", "source": "R1", "target": "R2" },
+      { "id": "e-r2-r3", "source": "R2", "target": "R3" },
+      { "id": "e-r3-sw1", "source": "R3", "target": "SW1" }
+    ]
+  }
+}

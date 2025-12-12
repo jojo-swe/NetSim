@@ -30,6 +30,7 @@ export function FloatingTerminal({ deviceId, onClose }: Props) {
 
   // Terminal Init
   useEffect(() => {
+    if (!deviceId) return;
     if (!containerRef.current) return;
 
     const term = new Terminal({
@@ -62,8 +63,14 @@ export function FloatingTerminal({ deviceId, onClose }: Props) {
     return () => {
       window.removeEventListener("resize", onResize);
       term.dispose();
+      if (termRef.current === term) {
+        termRef.current = null;
+      }
+      if (fitRef.current === fit) {
+        fitRef.current = null;
+      }
     };
-  }, []);
+  }, [deviceId]);
 
   // Resize when minimizing/restoring
   useEffect(() => {
