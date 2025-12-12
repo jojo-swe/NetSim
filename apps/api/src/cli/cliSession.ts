@@ -41,6 +41,61 @@ function normalizeWhitespace(input: string): string {
   return input.trim().replace(/\s+/g, " ");
 }
 
+function ipv4ToInt(ip: string): number | null {
+  const parts = ip.trim().split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const part of parts) {
+    const v = Number(part);
+    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
+    n = (n << 8) | v;
+  }
+  return n >>> 0;
+}
+
+function intToIpv4(n: number): string {
+  return [
+    (n >>> 24) & 255,
+    (n >>> 16) & 255,
+    (n >>> 8) & 255,
+    n & 255
+  ].join(".");
+}
+
+function inSameSubnet(ip: string, mask: string, otherIp: string): boolean {
+  const ipN = ipv4ToInt(ip);
+  const maskN = ipv4ToInt(mask);
+  const otherN = ipv4ToInt(otherIp);
+  if (ipN === null || maskN === null || otherN === null) return false;
+  return (ipN & maskN) === (otherN & maskN);
+}
+
+function networkAddress(ip: string, mask: string): string | null {
+  const ipN = ipv4ToInt(ip);
+  const maskN = ipv4ToInt(mask);
+  if (ipN === null || maskN === null) return null;
+  return intToIpv4((ipN & maskN) >>> 0);
+}
+
+function maskToPrefixLen(mask: string): number | null {
+  const m = ipv4ToInt(mask);
+  if (m === null) return null;
+
+  let seenZero = false;
+  let len = 0;
+  for (let i = 31; i >= 0; i--) {
+    const bit = (m >>> i) & 1;
+    if (bit === 1) {
+      if (seenZero) return null;
+      len++;
+    } else {
+      seenZero = true;
+    }
+  }
+
+  return len;
+}
+
 export class CliSession {
   private mode: CliMode = "user";
   private ctx: CliContext = {};
@@ -87,6 +142,9 @@ export class CliSession {
       }
       if (lower === "show ip interface brief") {
         return { output: this.showIpIntBrief(), prompt: this.getPrompt() };
+      }
+      if (lower === "show ip route") {
+        return { output: this.showIpRoute(), prompt: this.getPrompt() };
       }
       if (lower.startsWith("ping ")) {
         const target = line.substring(5).trim();
@@ -255,6 +313,54 @@ export class CliSession {
       .join("\n");
 
     return header + rows + "\n";
+  }
+
+  private showIpRoute(): string {
+    const lines: string[] = [];
+    lines.push("Codes: C - connected, S - static");
+    lines.push("");
+    lines.push("Gateway of last resort is not set");
+    lines.push("");
+
+    const connected: Array<{ network: string; prefixLen: number; ifaceName: string }> = [];
+
+    for (const iface of Object.values(this.device.config.interfaces)) {
+      if (!iface.adminUp) continue;
+      const operUp = this.world?.isInterfaceOperUp(this.device.id, iface.name) ?? true;
+      if (!operUp) continue;
+      if (!iface.ipv4Address || !iface.ipv4Mask) continue;
+
+      const net = networkAddress(iface.ipv4Address, iface.ipv4Mask);
+      const prefixLen = maskToPrefixLen(iface.ipv4Mask);
+      if (!net || prefixLen === null) continue;
+      connected.push({ network: net, prefixLen, ifaceName: iface.name });
+    }
+
+    for (const c of connected) {
+      lines.push(`C    ${c.network}/${c.prefixLen} is directly connected, ${c.ifaceName}`);
+    }
+
+    const staticRoutes = Array.isArray((this.device.config as any).staticRoutes) ? this.device.config.staticRoutes : [];
+    for (const route of staticRoutes) {
+      if (ipv4ToInt(route.destination) === null) continue;
+      if (ipv4ToInt(route.mask) === null) continue;
+      if (ipv4ToInt(route.nextHop) === null) continue;
+      const prefixLen = maskToPrefixLen(route.mask);
+      if (prefixLen === null) continue;
+
+      const nextHopReachable = Object.values(this.device.config.interfaces).some((iface) => {
+        if (!iface.adminUp) return false;
+        const operUp = this.world?.isInterfaceOperUp(this.device.id, iface.name) ?? true;
+        if (!operUp) return false;
+        if (!iface.ipv4Address || !iface.ipv4Mask) return false;
+        return inSameSubnet(iface.ipv4Address, iface.ipv4Mask, route.nextHop);
+      });
+
+      if (!nextHopReachable) continue;
+      lines.push(`S    ${route.destination}/${prefixLen} [1/0] via ${route.nextHop}`);
+    }
+
+    return lines.join("\n") + "\n";
   }
 
   private ping(target: string): string {

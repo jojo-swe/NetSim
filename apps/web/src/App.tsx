@@ -277,6 +277,7 @@ export default function App() {
         setSelectedDeviceId(null);
         setValidation(null);
         setNodes(loadedNodes);
+        setEdges([]);
 
         const ids = loadedNodes.map((n) => n.id);
         routerCounterRef.current = nextCounterFromIds(ids, /^R(\d+)$/);
@@ -307,28 +308,45 @@ export default function App() {
           return;
         }
 
-        const rebuilt: Edge[] = [];
+        try {
+          await fetch(`${apiOrigin}/api/world/reset`, { method: "POST" });
+        } catch {
+        }
+
+        for (const n of loadedNodes) {
+          const label = (n as any)?.data?.label as string | undefined;
+          const isSwitch = n.id.toUpperCase().startsWith("SW") || Boolean(label?.toLowerCase().includes("switch"));
+          const type = isSwitch ? "switch" : "router";
+          await createDevice(n.id, type);
+        }
+
         for (const e of loadedEdges) {
           const sourceId = (e as any).source as string | undefined;
           const targetId = (e as any).target as string | undefined;
           if (!sourceId || !targetId) continue;
           try {
-            const link = await createLink(sourceId, targetId);
-            rebuilt.push({
-              id: link.id,
-              source: sourceId,
-              target: targetId,
-              label: `${sourceId} ${link.a.interfaceName} ↔ ${targetId} ${link.b.interfaceName}`
-            });
+            await createLink(sourceId, targetId);
           } catch {
           }
         }
 
-        setEdges(rebuilt.length > 0 ? rebuilt : loadedEdges);
+        const linksResp = await fetch(`${apiOrigin}/api/links`);
+        const linksJson = (await linksResp.json()) as {
+          links?: Array<{ id: string; a: { deviceId: string; interfaceName: string }; b: { deviceId: string; interfaceName: string } }>;
+        };
+
+        const newEdges: Edge[] = (linksJson.links ?? []).map((l) => ({
+          id: l.id,
+          source: l.a.deviceId,
+          target: l.b.deviceId,
+          label: `${l.a.deviceId} ${l.a.interfaceName} ↔ ${l.b.deviceId} ${l.b.interfaceName}`
+        }));
+
+        setEdges(newEdges);
       } catch {
       }
     },
-    [apiOrigin, createLink, setEdges, setNodes]
+    [apiOrigin, createDevice, createLink, setEdges, setNodes]
   );
 
   const nodeTypes = useMemo(() => ({}), []);
