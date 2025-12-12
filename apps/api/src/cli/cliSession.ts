@@ -41,6 +41,15 @@ function normalizeWhitespace(input: string): string {
   return input.trim().replace(/\s+/g, " ");
 }
 
+function canonicalInterfaceName(input: string): string {
+  const name = input.trim();
+  const m = name.match(/^(?:gi|g|gigabitethernet)0\/(\d+)$/i);
+  if (m) {
+    return `GigabitEthernet0/${m[1]}`;
+  }
+  return name;
+}
+
 function ipv4ToInt(ip: string): number | null {
   const parts = ip.trim().split(".");
   if (parts.length !== 4) return null;
@@ -174,7 +183,7 @@ export class CliSession {
         return { output: "", prompt: this.getPrompt() };
       }
       if (lower.startsWith("interface ")) {
-        const ifName = line.substring("interface ".length).trim();
+        const ifName = canonicalInterfaceName(line.substring("interface ".length).trim());
         if (!ifName) {
           return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
         }
