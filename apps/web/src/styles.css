@@ -1,0 +1,35 @@
+html,
+body {
+  height: 100%;
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  background: #0b1220;
+  color: #e5e7eb;
+}
+
+#root {
+  height: 100%;
+}
+
+button {
+  font: inherit;
+}
+
+.netsim-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.netsim-btn {
+  background: rgba(59, 130, 246, 0.18);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.netsim-btn:hover {
+  background: rgba(59, 130, 246, 0.28);
+}

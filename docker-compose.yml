@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3001:3001"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_ORIGIN=http://localhost:3001
+      - VITE_WS_ORIGIN=ws://localhost:3001
+    depends_on:
+      - api
