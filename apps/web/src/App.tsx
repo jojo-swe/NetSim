@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   addEdge,
-  Background,
   Connection,
   Controls,
   Edge,
@@ -11,11 +10,16 @@ import ReactFlow, {
   OnConnect,
   ReactFlowProvider,
   useEdgesState,
-  useNodesState
+  useNodesState,
+  Background
 } from "reactflow";
 import "reactflow/dist/style.css";
+import "./styles.css";
 
-import { TerminalPanel } from "./TerminalPanel";
+import DeviceNode from "./DeviceNode";
+import { FloatingTerminal } from "./FloatingTerminal";
+import { DevicePalette } from "./DevicePalette";
+import { LabControls } from "./LabControls";
 
 type DeviceNodeData = {
   label: string;
@@ -65,7 +69,6 @@ export default function App() {
   const apiOrigin = useMemo(() => getApiOrigin(), []);
   const routerCounterRef = useRef<number>(1);
   const switchCounterRef = useRef<number>(1);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<DeviceNodeData>(initialNodes);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
@@ -76,6 +79,7 @@ export default function App() {
   const [validation, setValidation] = useState<LabValidationResult | null>(null);
   const [validating, setValidating] = useState<boolean>(false);
 
+  // Load Labs
   useEffect(() => {
     void (async () => {
       try {
@@ -86,19 +90,18 @@ export default function App() {
         if (loaded.length > 0) {
           setSelectedLabId((prev) => (loaded.some((l) => l.id === prev) ? prev : loaded[0].id));
         }
-      } catch {
-      }
+      } catch {}
     })();
   }, [apiOrigin]);
 
+  // Link Management
   const deleteLink = useCallback(
     async (linkId: string) => {
       try {
         await fetch(`${apiOrigin}/api/links/${encodeURIComponent(linkId)}`, {
           method: "DELETE"
         });
-      } catch {
-      }
+      } catch {}
     },
     [apiOrigin]
   );
@@ -119,9 +122,7 @@ export default function App() {
     async (sourceId: string, targetId: string) => {
       const resp = await fetch(`${apiOrigin}/api/links`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ a: { deviceId: sourceId }, b: { deviceId: targetId } })
       });
 
@@ -133,7 +134,6 @@ export default function App() {
       if (!resp.ok || !json.link) {
         throw new Error(json.error ?? "Failed to create link");
       }
-
       return json.link;
     },
     [apiOrigin]
@@ -152,7 +152,8 @@ export default function App() {
             id: link.id,
             source: sourceId,
             target: targetId,
-            label: `${sourceId} ${link.a.interfaceName} ↔ ${targetId} ${link.b.interfaceName}`
+            label: `${sourceId} ${link.a.interfaceName} ↔ ${targetId} ${link.b.interfaceName}`,
+            style: { strokeWidth: 2 }
           };
           setEdges((eds: Edge[]) => [...eds, edge]);
         } catch {
@@ -163,22 +164,45 @@ export default function App() {
     [createLink, setEdges]
   );
 
+  // Device Creation
   const createDevice = useCallback(
     async (deviceId: string, type: "router" | "switch") => {
       try {
         await fetch(`${apiOrigin}/api/devices`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: deviceId, type })
         });
-      } catch {
-      }
+      } catch {}
     },
     [apiOrigin]
   );
 
+  const addRouter = useCallback(() => {
+    const deviceId = `R${routerCounterRef.current++}`;
+    void createDevice(deviceId, "router");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device", // Custom Node Type
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `Router ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
+  const addSwitch = useCallback(() => {
+    const deviceId = `SW${switchCounterRef.current++}`;
+    void createDevice(deviceId, "switch");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `Switch ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
+  // Lab Actions
   const validateSelectedLab = useCallback(async () => {
     setValidating(true);
     try {
@@ -198,30 +222,6 @@ export default function App() {
     }
   }, [apiOrigin, selectedLabId]);
 
-  const addRouter = useCallback(() => {
-    const deviceId = `R${routerCounterRef.current++}`;
-    void createDevice(deviceId, "router");
-    const node: Node<DeviceNodeData> = {
-      id: deviceId,
-      type: "default",
-      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
-      data: { label: `Router ${deviceId}`, deviceId }
-    };
-    setNodes((prev: Node<DeviceNodeData>[]) => [...prev, node]);
-  }, [createDevice, setNodes]);
-
-  const addSwitch = useCallback(() => {
-    const deviceId = `SW${switchCounterRef.current++}`;
-    void createDevice(deviceId, "switch");
-    const node: Node<DeviceNodeData> = {
-      id: deviceId,
-      type: "default",
-      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
-      data: { label: `Switch ${deviceId}`, deviceId }
-    };
-    setNodes((prev: Node<DeviceNodeData>[]) => [...prev, node]);
-  }, [createDevice, setNodes]);
-
   const resetLab = useCallback(async () => {
     routerCounterRef.current = 1;
     switchCounterRef.current = 1;
@@ -231,8 +231,7 @@ export default function App() {
     setEdges([]);
     try {
       await fetch(`${apiOrigin}/api/world/reset`, { method: "POST" });
-    } catch {
-    }
+    } catch {}
   }, [apiOrigin, setEdges, setNodes]);
 
   const saveLabToFile = useCallback(async () => {
@@ -243,10 +242,7 @@ export default function App() {
       const labFile = {
         version: 1,
         createdAt: new Date().toISOString(),
-        topology: {
-          nodes,
-          edges
-        },
+        topology: { nodes, edges },
         snapshot: json.snapshot
       };
 
@@ -257,22 +253,17 @@ export default function App() {
       a.download = `netsim-lab-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-    }
+    } catch {}
   }, [apiOrigin, edges, nodes]);
 
   const loadLabFromFile = useCallback(
     async (file: File) => {
       try {
         const text = await file.text();
-        const parsed = JSON.parse(text) as {
-          version?: number;
-          topology?: { nodes?: Node<DeviceNodeData>[]; edges?: Edge[] };
-          snapshot?: unknown;
-        };
+        const parsed = JSON.parse(text) as any;
 
-        const loadedNodes = parsed.topology?.nodes ?? [];
-        const loadedEdges = parsed.topology?.edges ?? [];
+        const loadedNodes: Node[] = parsed.topology?.nodes ?? [];
+        const loadedEdges: Edge[] = parsed.topology?.edges ?? [];
 
         setSelectedDeviceId(null);
         setValidation(null);
@@ -283,210 +274,133 @@ export default function App() {
         routerCounterRef.current = nextCounterFromIds(ids, /^R(\d+)$/);
         switchCounterRef.current = nextCounterFromIds(ids, /^SW(\d+)$/);
 
-        if (parsed.snapshot) {
-          await fetch(`${apiOrigin}/api/world/snapshot`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ snapshot: parsed.snapshot })
-          });
+        // Reset backend first
+        await fetch(`${apiOrigin}/api/world/reset`, { method: "POST" }).catch(() => {});
 
-          const linksResp = await fetch(`${apiOrigin}/api/links`);
-          const linksJson = (await linksResp.json()) as {
-            links?: Array<{ id: string; a: { deviceId: string; interfaceName: string }; b: { deviceId: string; interfaceName: string } }>;
-          };
-
-          const newEdges: Edge[] = (linksJson.links ?? []).map((l) => ({
-            id: l.id,
-            source: l.a.deviceId,
-            target: l.b.deviceId,
-            label: `${l.a.deviceId} ${l.a.interfaceName} ↔ ${l.b.deviceId} ${l.b.interfaceName}`
-          }));
-
-          setEdges(newEdges);
-          return;
-        }
-
-        try {
-          await fetch(`${apiOrigin}/api/world/reset`, { method: "POST" });
-        } catch {
-        }
-
+        // Re-create devices in backend
         for (const n of loadedNodes) {
           const label = (n as any)?.data?.label as string | undefined;
           const isSwitch = n.id.toUpperCase().startsWith("SW") || Boolean(label?.toLowerCase().includes("switch"));
-          const type = isSwitch ? "switch" : "router";
-          await createDevice(n.id, type);
+          // Also check type if previously saved with 'device' type
+          await createDevice(n.id, isSwitch ? "switch" : "router");
         }
 
-        for (const e of loadedEdges) {
-          const sourceId = (e as any).source as string | undefined;
-          const targetId = (e as any).target as string | undefined;
-          if (!sourceId || !targetId) continue;
-          try {
-            await createLink(sourceId, targetId);
-          } catch {
-          }
+        // Snapshot restore if available
+        if (parsed.snapshot) {
+          await fetch(`${apiOrigin}/api/world/snapshot`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ snapshot: parsed.snapshot })
+          });
         }
 
+        // Re-create links
+        // If snapshot was restored, backend has the links, we just fetch them.
+        // If not, we might need to manually create them (original code did createLink loop if no snapshot)
+        // Original code logic: if snapshot, fetch links. Else reset, loop devices, loop edges, createLink.
+        // Simplified here to match original flow more or less.
+        
+        if (!parsed.snapshot) {
+            for (const e of loadedEdges) {
+                const sourceId = (e as any).source;
+                const targetId = (e as any).target;
+                if (!sourceId || !targetId) continue;
+                await createLink(sourceId, targetId).catch(() => {});
+            }
+        }
+
+        // Sync edges from backend to be sure
         const linksResp = await fetch(`${apiOrigin}/api/links`);
-        const linksJson = (await linksResp.json()) as {
-          links?: Array<{ id: string; a: { deviceId: string; interfaceName: string }; b: { deviceId: string; interfaceName: string } }>;
-        };
-
-        const newEdges: Edge[] = (linksJson.links ?? []).map((l) => ({
-          id: l.id,
-          source: l.a.deviceId,
-          target: l.b.deviceId,
-          label: `${l.a.deviceId} ${l.a.interfaceName} ↔ ${l.b.deviceId} ${l.b.interfaceName}`
+        const linksJson = (await linksResp.json()) as any;
+        const newEdges: Edge[] = (linksJson.links ?? []).map((l: any) => ({
+            id: l.id,
+            source: l.a.deviceId,
+            target: l.b.deviceId,
+            label: `${l.a.deviceId} ${l.a.interfaceName} ↔ ${l.b.deviceId} ${l.b.interfaceName}`,
+            style: { strokeWidth: 2 }
         }));
-
         setEdges(newEdges);
-      } catch {
-      }
+
+      } catch {}
     },
     [apiOrigin, createDevice, createLink, setEdges, setNodes]
   );
 
-  const nodeTypes = useMemo(() => ({}), []);
+  // Define Node Types
+  const nodeTypes = useMemo(() => ({
+    device: DeviceNode,
+    // fallback for old saves if they used 'default'
+    default: DeviceNode 
+  }), []);
 
   return (
     <ReactFlowProvider>
-      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr 520px", height: "100%" }}>
-        <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-          <div className="netsim-panel" style={{ padding: 14 }}>
-            <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 10 }}>Device palette</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button className="netsim-btn" onClick={addRouter}>
-                Add router
-              </button>
-              <button className="netsim-btn" onClick={addSwitch}>
-                Add switch
-              </button>
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.7, marginTop: 10 }}>
-              Tip: click a node to open its CLI.
-            </div>
-          </div>
+      <div style={{ width: "100%", height: "100%", position: "relative", background: "var(--bg-app)" }}>
+        
+        {/* Fullscreen Canvas */}
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          onNodeClick={(_, node) => setSelectedDeviceId(node.id)}
+          fitView
+          className="react-flow-dark"
+        >
+          <Background gap={24} size={1} />
+          <Controls showInteractive={false} />
+          <MiniMap 
+            nodeStrokeColor={(n) => {
+              if (n.type === 'input') return '#0041d0';
+              if (n.type === 'output') return '#ff0072';
+              if (n.type === 'default') return '#1a192b';
+              return '#eee';
+            }}
+            nodeColor={(n) => {
+              if (n.style?.background) return n.style.background as string;
+              return '#1a192b';
+            }}
+            maskColor="rgba(0, 0, 0, 0.4)"
+          />
+        </ReactFlow>
 
-          <div className="netsim-panel" style={{ padding: 14 }}>
-            <div style={{ fontSize: 14, opacity: 0.9, marginBottom: 8 }}>Lab</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button className="netsim-btn" onClick={saveLabToFile}>
-                Save lab
-              </button>
-              <button
-                className="netsim-btn"
-                onClick={() => {
-                  fileInputRef.current?.click();
-                }}
-              >
-                Load lab
-              </button>
-              <button className="netsim-btn" onClick={resetLab}>
-                Reset
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  void loadLabFromFile(f);
-                  e.target.value = "";
-                }}
-              />
-            </div>
-            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <select
-                  value={selectedLabId}
-                  onChange={(e) => {
-                    setSelectedLabId(e.target.value);
-                    setValidation(null);
-                  }}
-                  style={{
-                    flex: 1,
-                    background: "rgba(255,255,255,0.06)",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#e5e7eb",
-                    borderRadius: 10,
-                    padding: "10px 10px"
-                  }}
-                >
-                  {(labs.length ? labs : [{ id: "ccna-001", title: "CCNA 001", description: "" }]).map((lab) => (
-                    <option key={lab.id} value={lab.id}>
-                      {lab.title}
-                    </option>
-                  ))}
-                </select>
-                <button className="netsim-btn" onClick={validateSelectedLab} disabled={validating}>
-                  {validating ? "Validating..." : "Validate"}
-                </button>
-              </div>
-
-              {validation && (
-                <div style={{ fontSize: 12, opacity: 0.85 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                    <div>
-                      Score: <span style={{ fontWeight: 600 }}>{validation.score}%</span>
-                    </div>
-                    <div style={{ color: validation.passed ? "#34d399" : "#f87171" }}>
-                      {validation.passed ? "PASS" : "FAIL"}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {validation.objectives.map((obj) => (
-                      <div
-                        key={obj.id}
-                        style={{
-                          padding: 10,
-                          borderRadius: 10,
-                          border: "1px solid rgba(255,255,255,0.08)",
-                          background: obj.passed ? "rgba(16,185,129,0.08)" : "rgba(248,113,113,0.08)"
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                          <div style={{ fontWeight: 600 }}>{obj.title}</div>
-                          <div style={{ opacity: 0.9 }}>{obj.passed ? "OK" : "NO"}</div>
-                        </div>
-                        {!obj.passed && (obj.hint || obj.details) && (
-                          <div style={{ marginTop: 6, opacity: 0.9 }}>
-                            {obj.details ? <div>Reason: {obj.details}</div> : null}
-                            {obj.hint ? <div>Hint: {obj.hint}</div> : null}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+        {/* Floating Components */}
+        <DevicePalette 
+            onAddRouter={addRouter} 
+            onAddSwitch={addSwitch} 
+        />
+        
+        <div style={{ position: "absolute", top: 20, right: 20, zIndex: 50 }}>
+            <LabControls 
+                labs={labs}
+                selectedLabId={selectedLabId}
+                onSelectLab={setSelectedLabId}
+                onValidate={validateSelectedLab}
+                validating={validating}
+                onSave={saveLabToFile}
+                onLoad={loadLabFromFile}
+                onReset={resetLab}
+                validationResult={validation}
+            />
         </div>
 
-        <div style={{ height: "100%" }}>
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            nodeTypes={nodeTypes}
-            onNodeClick={(_, node) => setSelectedDeviceId(node.id)}
-            fitView
-          >
-            <Background />
-            <MiniMap />
-            <Controls />
-          </ReactFlow>
-        </div>
-
-        <div style={{ padding: 14 }}>
-          <TerminalPanel deviceId={selectedDeviceId} />
+        <FloatingTerminal 
+            deviceId={selectedDeviceId} 
+            onClose={() => setSelectedDeviceId(null)} 
+        />
+        
+        {/* Overlay for small screens or credits if needed */}
+        <div style={{ 
+            position: "absolute", 
+            bottom: 10, 
+            left: 20, 
+            color: "var(--text-muted)", 
+            fontSize: 10, 
+            opacity: 0.5 
+        }}>
+            NetSim v0.1.0-alpha
         </div>
       </div>
     </ReactFlowProvider>
