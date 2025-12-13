@@ -4,12 +4,15 @@ import express, { type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { CliSession } from "./cli/cliSession.js";
+import { createNdjsonRpcServer } from "./rpc/ndjsonRpcServer.js";
 import { labs, validateLab } from "./labs/index.js";
 import type { DeviceType, Link } from "./sim/types.js";
 import { World } from "./sim/world.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 const HOST = process.env.HOST ?? "0.0.0.0";
+const RPC_PORT = Number(process.env.NETSIM_RPC_PORT ?? 3002);
+const RPC_HOST = "127.0.0.1";
 
 const app = express();
 app.use(express.json());
@@ -117,45 +120,137 @@ app.post("/api/world/snapshot", (req: Request, res: Response) => {
 });
 
 const server = http.createServer(app);
+const rpcServer = createNdjsonRpcServer(world);
 
 const wss = new WebSocketServer({ server, path: "/ws/cli" });
 
 wss.on("connection", (ws: WebSocket) => {
   let session: CliSession | undefined;
+  let rawLineBuf = "";
+  let inputMode: "json" | "raw" = "json";
+
+  const sendOutput = (data: string) => {
+    ws.send(JSON.stringify({ type: "output", data }));
+  };
+
+  const handleLine = (line: string) => {
+    if (!session) {
+      sendOutput("\n% Not attached to a device.\n");
+      return;
+    }
+    const result = session.executeLine(line);
+    const combined = `${result.output}${result.prompt ? result.prompt : ""}`;
+    sendOutput(combined.startsWith("\n") ? combined : `\n${combined}`);
+    if (!result.prompt) {
+      ws.close();
+    }
+  };
+
+  const handleRawInput = (chunk: string) => {
+    for (const ch of chunk) {
+      if (ch === "\r" || ch === "\n") {
+        const toSend = rawLineBuf;
+        rawLineBuf = "";
+        handleLine(toSend);
+        continue;
+      }
+      if (ch === "\u007f") {
+        if (rawLineBuf.length > 0) {
+          rawLineBuf = rawLineBuf.slice(0, -1);
+        }
+        continue;
+      }
+      if (ch >= " ") {
+        rawLineBuf += ch;
+      }
+    }
+  };
+
+  const rawDataToString = (data: unknown): string => {
+    if (typeof data === "string") return data;
+    if (Buffer.isBuffer(data)) return data.toString("utf8");
+    if (data instanceof ArrayBuffer) return Buffer.from(data).toString("utf8");
+    if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
+    return String(data);
+  };
 
   ws.send(JSON.stringify({ type: "info", message: "NetSim CLI connected" }));
 
   ws.on("message", (data: unknown) => {
-    try {
-      const msg = JSON.parse(String(data)) as
-        | { type: "attach"; deviceId: string }
-        | { type: "input"; line: string };
+    const text = rawDataToString(data);
 
-      if (msg.type === "attach") {
-        const device = world.createDevice({ id: msg.deviceId, type: "router" });
-        session = new CliSession(device, world);
-        ws.send(JSON.stringify({ type: "output", data: `\n${session.getPrompt()}` }));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      if (inputMode === "raw") {
+        handleRawInput(text);
         return;
       }
+      sendOutput("\n% Error parsing client message.\n");
+      return;
+    }
 
-      if (msg.type === "input") {
-        if (!session) {
-          ws.send(JSON.stringify({ type: "output", data: "\n% Not attached to a device.\n" }));
-          return;
-        }
-        const result = session.executeLine(msg.line);
-        const combined = `${result.output}${result.prompt ? result.prompt : ""}`;
-        ws.send(JSON.stringify({ type: "output", data: combined.startsWith("\n") ? combined : `\n${combined}` }));
-        if (!result.prompt) {
-          ws.close();
-        }
+    if (!parsed || typeof parsed !== "object") {
+      if (inputMode === "raw") {
+        handleRawInput(text);
+        return;
       }
-    } catch (err) {
-      ws.send(JSON.stringify({ type: "output", data: "\n% Error parsing client message.\n" }));
+      sendOutput("\n% Error parsing client message.\n");
+      return;
+    }
+
+    const msg = parsed as any;
+
+    if (msg.type === "mode") {
+      if (msg.mode === "raw") inputMode = "raw";
+      if (msg.mode === "json") inputMode = "json";
+      return;
+    }
+
+    if (msg.type === "attach") {
+      const deviceId = typeof msg.deviceId === "string" ? msg.deviceId.trim() : "";
+      if (!deviceId) {
+        sendOutput("\n% Invalid device id.\n");
+        return;
+      }
+      const device = world.createDevice({ id: deviceId, type: "router" });
+      session = new CliSession(device, world);
+      sendOutput(`\n${session.getPrompt()}`);
+      return;
+    }
+
+    if (msg.type === "input") {
+      const line = typeof msg.line === "string" ? msg.line : "";
+      handleLine(line);
+      return;
+    }
+
+    if (msg.type === "raw") {
+      const chunk = typeof msg.data === "string" ? msg.data : "";
+      handleRawInput(chunk);
     }
   });
 });
 
+rpcServer.on("error", (err) => {
+  console.error("netsim-rpc error", err);
+});
+
+if (Number.isFinite(RPC_PORT) && RPC_PORT > 0) {
+  rpcServer.listen(RPC_PORT, RPC_HOST, () => {
+    console.log(`netsim-rpc listening on tcp://${RPC_HOST}:${RPC_PORT}`);
+  });
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`netsim-api listening on http://${HOST}:${PORT}`);
 });
+
+const shutdownRpc = () => {
+  if (!rpcServer.listening) return;
+  rpcServer.close();
+};
+
+process.on("SIGINT", shutdownRpc);
+process.on("SIGTERM", shutdownRpc);
