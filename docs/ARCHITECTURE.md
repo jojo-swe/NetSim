@@ -40,6 +40,15 @@ Responsibilities:
 - Validation engine:
   - Evaluate lab objectives and return actionable feedback
 
+Interfaces:
+
+- HTTP (REST) for topology/labs
+- WebSocket for interactive CLI sessions (`/ws/cli`)
+  - Backwards compatible JSON messages (`attach`, `input`)
+  - Optional raw keystroke mode for sidecar-style input streaming
+- Localhost-only TCP NDJSON RPC endpoint for CLI sidecar integration
+  - Binds to `tcp://127.0.0.1:${NETSIM_RPC_PORT}` (default `3002`)
+
 ## Core abstractions
 
 ### World

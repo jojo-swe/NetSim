@@ -16,6 +16,28 @@ export interface CliResult {
   prompt: string;
 }
 
+type CliCompletionResult = {
+  insert: string;
+  candidates: string[];
+  prompt: string;
+};
+
+function commonPrefix(items: string[]): string {
+  if (items.length === 0) return "";
+  let prefix = items[0] ?? "";
+  for (let i = 1; i < items.length; i++) {
+    const s = items[i] ?? "";
+    const max = Math.min(prefix.length, s.length);
+    let j = 0;
+    for (; j < max; j++) {
+      if (prefix[j]?.toLowerCase() !== s[j]?.toLowerCase()) break;
+    }
+    prefix = prefix.slice(0, j);
+    if (!prefix) break;
+  }
+  return prefix;
+}
+
 function modeSuffix(mode: CliMode, ctx: CliContext): string {
   switch (mode) {
     case "user":
@@ -116,6 +138,44 @@ export class CliSession {
 
   getPrompt(): string {
     return buildPrompt(this.device, this.mode, this.ctx);
+  }
+
+  complete(rawLine: string): CliCompletionResult {
+    const prompt = this.getPrompt();
+    const endsWithSpace = /\s$/.test(rawLine);
+    const trimmedStart = rawLine.replace(/^\s+/, "");
+    const parts = trimmedStart.length > 0 ? trimmedStart.split(/\s+/) : [];
+
+    let tokens = parts;
+    let partial = "";
+
+    if (!endsWithSpace && parts.length > 0) {
+      partial = parts[parts.length - 1] ?? "";
+      tokens = parts.slice(0, -1);
+    }
+
+    const candidates = this.completionCandidates(tokens);
+    const p = partial.toLowerCase();
+    const matches = candidates.filter((c) => c.toLowerCase().startsWith(p));
+
+    if (matches.length === 0) {
+      return { insert: "", candidates: [], prompt };
+    }
+
+    if (matches.length === 1) {
+      const choice = matches[0] ?? "";
+      let insert = choice.slice(partial.length);
+      insert += " ";
+      return { insert, candidates: matches, prompt };
+    }
+
+    const shared = commonPrefix(matches);
+    if (shared.length > partial.length) {
+      const insert = shared.slice(partial.length);
+      return { insert, candidates: matches, prompt };
+    }
+
+    return { insert: "", candidates: matches, prompt };
   }
 
   executeLine(rawLine: string): CliResult {
@@ -274,6 +334,44 @@ export class CliSession {
     }
 
     return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+  }
+
+  private completionCandidates(tokens: string[]): string[] {
+    const t = tokens.map((x) => x.toLowerCase());
+
+    if (this.mode === "user") {
+      if (t.length === 0) return ["enable", "exit", "logout"];
+      return [];
+    }
+
+    if (this.mode === "priv") {
+      if (t.length === 0) return ["disable", "configure", "show", "ping", "exit"];
+      if (t.length === 1 && t[0] === "configure") return ["terminal"];
+      if (t.length === 1 && t[0] === "show") return ["running-config", "ip"];
+      if (t.length === 2 && t[0] === "show" && t[1] === "ip") return ["interface", "route"];
+      if (t.length === 3 && t[0] === "show" && t[1] === "ip" && t[2] === "interface") return ["brief"];
+      return [];
+    }
+
+    if (this.mode === "config") {
+      if (t.length === 0) return ["end", "exit", "hostname", "interface", "ip", "no"];
+      if (t.length === 1 && t[0] === "ip") return ["route"];
+      if (t.length === 1 && t[0] === "no") return ["ip"];
+      if (t.length === 2 && t[0] === "no" && t[1] === "ip") return ["route"];
+      if (t.length === 1 && t[0] === "interface") {
+        return Object.keys(this.device.config.interfaces);
+      }
+      return [];
+    }
+
+    if (this.mode === "config-if") {
+      if (t.length === 0) return ["exit", "end", "shutdown", "no", "ip"];
+      if (t.length === 1 && t[0] === "no") return ["shutdown"];
+      if (t.length === 1 && t[0] === "ip") return ["address"];
+      return [];
+    }
+
+    return [];
   }
 
   private showRunningConfig(): string {

@@ -226,6 +226,24 @@ wss.on("connection", (ws: WebSocket) => {
       return;
     }
 
+    if (msg.type === "complete") {
+      const line = typeof msg.line === "string" ? msg.line : "";
+      if (!session) {
+        ws.send(JSON.stringify({ type: "complete", insert: "", candidates: [], prompt: "" }));
+        return;
+      }
+      const result = session.complete(line);
+      ws.send(
+        JSON.stringify({
+          type: "complete",
+          insert: result.insert,
+          candidates: result.candidates,
+          prompt: result.prompt
+        })
+      );
+      return;
+    }
+
     if (msg.type === "raw") {
       const chunk = typeof msg.data === "string" ? msg.data : "";
       handleRawInput(chunk);

@@ -108,6 +108,29 @@ export function FloatingTerminal({ deviceId, onClose }: Props) {
         const msg = JSON.parse(String(evt.data));
         if (msg.type === "output" && msg.data) {
           write(msg.data.replace(/\n/g, "\r\n"));
+          return;
+        }
+
+        if (msg.type === "complete") {
+          const insert = typeof msg.insert === "string" ? msg.insert : "";
+          const prompt = typeof msg.prompt === "string" ? msg.prompt : "";
+          const candidates = Array.isArray(msg.candidates)
+            ? msg.candidates.filter((c: unknown) => typeof c === "string")
+            : [];
+
+          if (insert) {
+            lineBuf += insert;
+            term.write(insert);
+            return;
+          }
+
+          if (candidates.length > 0) {
+            term.write("\r\n");
+            term.write(candidates.join("\r\n"));
+            term.write("\r\n");
+            term.write(prompt);
+            term.write(lineBuf);
+          }
         }
       } catch {}
     };
@@ -116,6 +139,18 @@ export function FloatingTerminal({ deviceId, onClose }: Props) {
       setStatus("Disconnected");
       term.writeln(`\r\n\x1b[31m[Disconnected]\x1b[0m`);
     };
+
+    term.attachCustomKeyEventHandler((e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "complete", line: lineBuf }));
+        }
+        return false;
+      }
+      return true;
+    });
 
     const disposeData = term.onData((data) => {
       if (data === "\r") {
