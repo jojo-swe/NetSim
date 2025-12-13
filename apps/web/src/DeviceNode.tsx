@@ -12,6 +12,7 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
   const label = data.label.toLowerCase();
   const isRouter = label.includes("router") || data.deviceId.startsWith("R");
   const isSwitch = label.includes("switch") || data.deviceId.startsWith("SW");
+  const isHost = label.includes("host") || data.deviceId.startsWith("H");
   const isServer = label.includes("server");
   const isCloud = label.includes("cloud") || label.includes("internet");
 
@@ -19,6 +20,8 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
   let Icon = Box;
   if (isRouter) Icon = Router;
   else if (isSwitch) Icon = Box; // Switch often looks like a box with arrows, but Box is clean for now. 
+  else if (isHost || isServer) Icon = Server;
+  else if (isCloud) Icon = Cloud;
   // actually let's use a specific look for switch if possible or just generic. 
   // Lucide doesn't have a perfect "Switch" icon, so we use Box or maybe something else.
   // Let's stick to Box for switch, Router for Router.

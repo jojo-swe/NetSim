@@ -1,12 +1,13 @@
 import { motion } from "framer-motion";
-import { Router, Box } from "lucide-react";
+import { Router, Box, Server } from "lucide-react";
 
 type Props = {
   onAddRouter: () => void;
   onAddSwitch: () => void;
+  onAddHost: () => void;
 };
 
-export function DevicePalette({ onAddRouter, onAddSwitch }: Props) {
+export function DevicePalette({ onAddRouter, onAddSwitch, onAddHost }: Props) {
   return (
     <motion.div
       initial={{ x: -100, opacity: 0 }}
@@ -39,6 +40,13 @@ export function DevicePalette({ onAddRouter, onAddSwitch }: Props) {
           <Box size={24} color="#818CF8" />
         </button>
         <span className="tooltip">Add Switch</span>
+      </div>
+
+      <div className="tooltip-container" style={{ position: "relative" }}>
+        <button className="device-btn" onClick={onAddHost}>
+          <Server size={24} color="#34D399" />
+        </button>
+        <span className="tooltip">Add Host</span>
       </div>
 
       <style>{`

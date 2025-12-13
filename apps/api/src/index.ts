@@ -214,7 +214,11 @@ wss.on("connection", (ws: WebSocket) => {
         sendOutput("\n% Invalid device id.\n");
         return;
       }
-      const device = world.createDevice({ id: deviceId, type: "router" });
+      const upper = deviceId.toUpperCase();
+      let type: DeviceType = "router";
+      if (upper.startsWith("SW")) type = "switch";
+      else if (upper.startsWith("H")) type = "host";
+      const device = world.createDevice({ id: deviceId, type });
       session = new CliSession(device, world);
       sendOutput(`\n${session.getPrompt()}`);
       return;

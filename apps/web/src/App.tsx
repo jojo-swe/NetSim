@@ -69,6 +69,7 @@ export default function App() {
   const apiOrigin = useMemo(() => getApiOrigin(), []);
   const routerCounterRef = useRef<number>(1);
   const switchCounterRef = useRef<number>(1);
+  const hostCounterRef = useRef<number>(1);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<DeviceNodeData>(initialNodes);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
@@ -166,7 +167,7 @@ export default function App() {
 
   // Device Creation
   const createDevice = useCallback(
-    async (deviceId: string, type: "router" | "switch") => {
+    async (deviceId: string, type: "router" | "switch" | "host") => {
       try {
         await fetch(`${apiOrigin}/api/devices`, {
           method: "POST",
@@ -202,6 +203,18 @@ export default function App() {
     setNodes((prev) => [...prev, node]);
   }, [createDevice, setNodes]);
 
+  const addHost = useCallback(() => {
+    const deviceId = `H${hostCounterRef.current++}`;
+    void createDevice(deviceId, "host");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `Host ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
   // Lab Actions
   const validateSelectedLab = useCallback(async () => {
     setValidating(true);
@@ -225,6 +238,7 @@ export default function App() {
   const resetLab = useCallback(async () => {
     routerCounterRef.current = 1;
     switchCounterRef.current = 1;
+    hostCounterRef.current = 1;
     setSelectedDeviceId(null);
     setValidation(null);
     setNodes([]);
@@ -273,6 +287,7 @@ export default function App() {
         const ids = loadedNodes.map((n) => n.id);
         routerCounterRef.current = nextCounterFromIds(ids, /^R(\d+)$/);
         switchCounterRef.current = nextCounterFromIds(ids, /^SW(\d+)$/);
+        hostCounterRef.current = nextCounterFromIds(ids, /^H(\d+)$/);
 
         // Reset backend first
         await fetch(`${apiOrigin}/api/world/reset`, { method: "POST" }).catch(() => {});
@@ -281,8 +296,9 @@ export default function App() {
         for (const n of loadedNodes) {
           const label = (n as any)?.data?.label as string | undefined;
           const isSwitch = n.id.toUpperCase().startsWith("SW") || Boolean(label?.toLowerCase().includes("switch"));
+          const isHost = n.id.toUpperCase().startsWith("H") || Boolean(label?.toLowerCase().includes("host"));
           // Also check type if previously saved with 'device' type
-          await createDevice(n.id, isSwitch ? "switch" : "router");
+          await createDevice(n.id, isHost ? "host" : isSwitch ? "switch" : "router");
         }
 
         // Snapshot restore if available
@@ -370,6 +386,7 @@ export default function App() {
         <DevicePalette 
             onAddRouter={addRouter} 
             onAddSwitch={addSwitch} 
+            onAddHost={addHost}
         />
         
         <div style={{ position: "absolute", top: 20, right: 20, zIndex: 50 }}>
