@@ -31,6 +31,7 @@ export interface DeviceConfig {
   hostname: string;
   interfaces: Record<InterfaceName, InterfaceConfig>;
   staticRoutes: StaticRouteConfig[];
+  defaultGateway?: string;
 }
 
 export interface Device {

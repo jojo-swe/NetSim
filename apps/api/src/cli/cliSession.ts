@@ -3,6 +3,10 @@ import type { Device, StaticRouteConfig } from "../sim/types.js";
 type WorldLike = {
   isInterfaceOperUp(deviceId: string, interfaceName: string): boolean;
   canPing(fromDeviceId: string, targetIp: string): boolean;
+  traceRoute(fromDeviceId: string, targetIp: string): { ok: boolean; hops: string[] };
+  getArpTable(
+    deviceId: string
+  ): Array<{ ip: string; mac: string; interfaceName: string; ageMinutes: number }>;
 };
 
 export type CliMode = "user" | "priv" | "config" | "config-if";
@@ -215,9 +219,16 @@ export class CliSession {
       if (lower === "show ip route") {
         return { output: this.showIpRoute(), prompt: this.getPrompt() };
       }
+      if (lower === "show arp" || lower === "show ip arp") {
+        return { output: this.showArp(), prompt: this.getPrompt() };
+      }
       if (lower.startsWith("ping ")) {
         const target = line.substring(5).trim();
         return { output: this.ping(target), prompt: this.getPrompt() };
+      }
+      if (lower.startsWith("traceroute ") || lower.startsWith("trace ")) {
+        const target = lower.startsWith("trace ") ? line.substring(6).trim() : line.substring(11).trim();
+        return { output: this.traceroute(target), prompt: this.getPrompt() };
       }
       if (lower === "exit") {
         return { output: "Connection closed by foreign host.\n", prompt: "" };
@@ -345,10 +356,10 @@ export class CliSession {
     }
 
     if (this.mode === "priv") {
-      if (t.length === 0) return ["disable", "configure", "show", "ping", "exit"];
+      if (t.length === 0) return ["disable", "configure", "show", "ping", "traceroute", "trace", "exit"];
       if (t.length === 1 && t[0] === "configure") return ["terminal"];
-      if (t.length === 1 && t[0] === "show") return ["running-config", "ip"];
-      if (t.length === 2 && t[0] === "show" && t[1] === "ip") return ["interface", "route"];
+      if (t.length === 1 && t[0] === "show") return ["running-config", "ip", "arp"];
+      if (t.length === 2 && t[0] === "show" && t[1] === "ip") return ["interface", "route", "arp"];
       if (t.length === 3 && t[0] === "show" && t[1] === "ip" && t[2] === "interface") return ["brief"];
       return [];
     }
@@ -403,6 +414,25 @@ export class CliSession {
 
     lines.push("end\n");
     return lines.join("\n") + "\n";
+  }
+
+  private showArp(): string {
+    const header = "Protocol  Address          Age (min)  Hardware Addr   Type   Interface\n";
+    const entries = this.world?.getArpTable(this.device.id) ?? [];
+    if (entries.length === 0) return header;
+
+    const rows = entries
+      .map((e) => {
+        const proto = "Internet".padEnd(10, " ");
+        const addr = e.ip.padEnd(16, " ");
+        const age = String(e.ageMinutes).padEnd(10, " ");
+        const mac = e.mac.padEnd(15, " ");
+        const type = "ARPA".padEnd(7, " ");
+        return `${proto}${addr}${age}${mac}${type}${e.interfaceName}`;
+      })
+      .join("\n");
+
+    return header + rows + "\n";
   }
 
   private showIpIntBrief(): string {
@@ -480,5 +510,27 @@ export class CliSession {
       marks,
       success
     ].join("\n") + "\n";
+  }
+
+  private traceroute(target: string): string {
+    const result = this.world?.traceRoute(this.device.id, target) ?? { ok: false, hops: [] };
+    const lines: string[] = [];
+    lines.push("Type escape sequence to abort.");
+    lines.push(`Tracing the route to ${target}`);
+    lines.push("");
+
+    const hops = Array.isArray(result.hops) ? result.hops : [];
+    for (let i = 0; i < hops.length; i++) {
+      const hopIp = hops[i] ?? "";
+      if (!hopIp) continue;
+      lines.push(`  ${i + 1}  ${hopIp}  1 msec  1 msec  1 msec`);
+    }
+
+    if (!result.ok) {
+      const n = hops.length + 1;
+      lines.push(`  ${n}  *  *  *`);
+    }
+
+    return lines.join("\n") + "\n";
   }
 }

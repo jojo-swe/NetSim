@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Device, DeviceType, InterfaceConfig, Link, LinkEndpoint } from "./types.js";
 
 function defaultHostnameFor(type: DeviceType): string {
@@ -67,9 +67,22 @@ function ipMatchesDestination(targetIp: string, destination: string, mask: strin
   return (t & m) === (d & m);
 }
 
+type ArpEntry = {
+  mac: string;
+  interfaceName: string;
+  learnedAt: number;
+};
+
+function macForEndpoint(ep: LinkEndpoint): string {
+  const h = createHash("sha256").update(`${ep.deviceId}::${ep.interfaceName}`).digest();
+  const bytes = [0x02, h[0], h[1], h[2], h[3], h[4]];
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join(":");
+}
+
 export class World {
   private devices = new Map<string, Device>();
   private links = new Map<string, Link>();
+  private arpTables = new Map<string, Map<string, ArpEntry>>();
 
   listDevices(): Device[] {
     return [...this.devices.values()];
@@ -89,12 +102,14 @@ export class World {
   importSnapshot(snapshot: { devices: Device[]; links?: Link[] }): void {
     this.devices.clear();
     this.links.clear();
+    this.arpTables.clear();
     for (const device of snapshot.devices) {
       const cloned = JSON.parse(JSON.stringify(device)) as Device;
       if (!Array.isArray((cloned as any).config?.staticRoutes)) {
         (cloned as any).config.staticRoutes = [];
       }
       this.devices.set(device.id, cloned);
+      this.arpTables.set(device.id, new Map());
     }
     if (snapshot.links) {
       for (const link of snapshot.links) {
@@ -112,7 +127,10 @@ export class World {
     const type: DeviceType = input.type ?? "router";
 
     const existing = this.devices.get(id);
-    if (existing) return existing;
+    if (existing) {
+      if (!this.arpTables.has(id)) this.arpTables.set(id, new Map());
+      return existing;
+    }
 
     const hostname = input.hostname ?? defaultHostnameFor(type);
     const defaultAdminUp = type !== "router";
@@ -131,6 +149,7 @@ export class World {
     };
 
     this.devices.set(id, device);
+    this.arpTables.set(id, new Map());
     return device;
   }
 
@@ -204,15 +223,38 @@ export class World {
   canPing(fromDeviceId: string, targetIp: string): boolean {
     if (ipv4ToInt(targetIp) === null) return false;
 
-    const targets = this.findActiveIpEndpoints(targetIp);
-    if (targets.length === 0) return false;
-
     const forward = this.routeToIp(fromDeviceId, targetIp, 8, new Set<string>(), undefined);
-    if (!forward.ok || !forward.originSourceIp) return false;
+    if (!forward.ok || !forward.originSourceIp || !forward.reachedDeviceId) return false;
 
-    const destDeviceId = targets[0].ep.deviceId;
-    const reverse = this.routeToIp(destDeviceId, forward.originSourceIp, 8, new Set<string>(), undefined);
+    const reverse = this.routeToIp(forward.reachedDeviceId, forward.originSourceIp, 8, new Set<string>(), undefined);
     return reverse.ok;
+  }
+
+  traceRoute(fromDeviceId: string, targetIp: string): { ok: boolean; hops: string[] } {
+    if (ipv4ToInt(targetIp) === null) return { ok: false, hops: [] };
+    const result = this.traceToIp(fromDeviceId, targetIp, 8, new Set<string>(), undefined);
+    return { ok: result.ok, hops: result.hops };
+  }
+
+  getArpTable(
+    deviceId: string
+  ): Array<{ ip: string; mac: string; interfaceName: string; ageMinutes: number }> {
+    const table = this.arpTables.get(deviceId);
+    if (!table) return [];
+
+    const now = Date.now();
+    return [...table.entries()]
+      .map(([ip, e]) => ({
+        ip,
+        mac: e.mac,
+        interfaceName: e.interfaceName,
+        ageMinutes: Math.floor((now - e.learnedAt) / 60000)
+      }))
+      .sort((a, b) => {
+        const ai = ipv4ToInt(a.ip) ?? 0;
+        const bi = ipv4ToInt(b.ip) ?? 0;
+        return ai - bi;
+      });
   }
 
   private findActiveIpEndpoints(ip: string): Array<{ ep: LinkEndpoint; mask: string }> {
@@ -260,6 +302,14 @@ export class World {
       }
     }
 
+    const dg = device.config.defaultGateway;
+    if (dg && ipv4ToInt(dg) !== null) {
+      const prefixLen = 0;
+      if (!best) {
+        best = { kind: "static", nextHop: dg, prefixLen };
+      }
+    }
+
     return best;
   }
 
@@ -269,13 +319,15 @@ export class World {
     maxHops: number,
     visited: Set<string>,
     originSourceIp: string | undefined
-  ): { ok: boolean; originSourceIp?: string } {
+  ): { ok: boolean; originSourceIp?: string; reachedDeviceId?: string } {
     if (maxHops <= 0) return { ok: false };
     if (visited.has(fromDeviceId)) return { ok: false };
     visited.add(fromDeviceId);
 
     const fromDevice = this.devices.get(fromDeviceId);
     if (!fromDevice) return { ok: false };
+
+    if (originSourceIp && fromDevice.type !== "router") return { ok: false };
 
     const targets = this.findActiveIpEndpoints(targetIp);
     if (targets.length === 0) return { ok: false };
@@ -294,7 +346,13 @@ export class World {
         for (const tgt of targets) {
           if (!inSameSubnet(targetIp, tgt.mask, srcIface.ipv4Address)) continue;
           if (this.l2Reachable(srcEp, tgt.ep)) {
-            return { ok: true, originSourceIp: originSourceIp ?? srcIface.ipv4Address };
+            this.learnArp(fromDevice.id, targetIp, macForEndpoint(tgt.ep), srcIface.name);
+            this.learnArp(tgt.ep.deviceId, srcIface.ipv4Address, macForEndpoint(srcEp), tgt.ep.interfaceName);
+            return {
+              ok: true,
+              originSourceIp: originSourceIp ?? srcIface.ipv4Address,
+              reachedDeviceId: tgt.ep.deviceId
+            };
           }
         }
       }
@@ -319,6 +377,8 @@ export class World {
       for (const nh of nextHops) {
         if (!inSameSubnet(nextHopIp, nh.mask, srcIface.ipv4Address)) continue;
         if (!this.l2Reachable(srcEp, nh.ep)) continue;
+        this.learnArp(fromDevice.id, nextHopIp, macForEndpoint(nh.ep), srcIface.name);
+        this.learnArp(nh.ep.deviceId, srcIface.ipv4Address, macForEndpoint(srcEp), nh.ep.interfaceName);
         const nextOrigin = originSourceIp ?? srcIface.ipv4Address;
         const hop = this.routeToIp(nh.ep.deviceId, targetIp, maxHops - 1, new Set(visited), nextOrigin);
         if (hop.ok) return hop;
@@ -326,6 +386,124 @@ export class World {
     }
 
     return { ok: false };
+  }
+
+  private traceToIp(
+    fromDeviceId: string,
+    targetIp: string,
+    maxHops: number,
+    visited: Set<string>,
+    originSourceIp: string | undefined
+  ): { ok: boolean; originSourceIp?: string; reachedDeviceId?: string; hops: string[] } {
+    if (maxHops <= 0) return { ok: false, hops: [] };
+    if (visited.has(fromDeviceId)) return { ok: false, hops: [] };
+    visited.add(fromDeviceId);
+
+    const fromDevice = this.devices.get(fromDeviceId);
+    if (!fromDevice) return { ok: false, hops: [] };
+
+    if (originSourceIp && fromDevice.type !== "router") return { ok: false, hops: [] };
+
+    const targets = this.findActiveIpEndpoints(targetIp);
+    if (targets.length === 0) return { ok: false, hops: [] };
+
+    const best = this.bestRoute(fromDevice, targetIp);
+    if (!best) return { ok: false, hops: [] };
+
+    if (best.kind === "connected") {
+      for (const srcIface of Object.values(fromDevice.config.interfaces)) {
+        if (!srcIface.adminUp) continue;
+        if (!srcIface.ipv4Address || !srcIface.ipv4Mask) continue;
+        if (!this.isInterfaceOperUp(fromDevice.id, srcIface.name)) continue;
+        if (!inSameSubnet(srcIface.ipv4Address, srcIface.ipv4Mask, targetIp)) continue;
+
+        const srcEp: LinkEndpoint = { deviceId: fromDevice.id, interfaceName: srcIface.name };
+        for (const tgt of targets) {
+          if (!inSameSubnet(targetIp, tgt.mask, srcIface.ipv4Address)) continue;
+          if (this.l2Reachable(srcEp, tgt.ep)) {
+            this.learnArp(fromDevice.id, targetIp, macForEndpoint(tgt.ep), srcIface.name);
+            this.learnArp(tgt.ep.deviceId, srcIface.ipv4Address, macForEndpoint(srcEp), tgt.ep.interfaceName);
+            return {
+              ok: true,
+              originSourceIp: originSourceIp ?? srcIface.ipv4Address,
+              reachedDeviceId: tgt.ep.deviceId,
+              hops: [targetIp]
+            };
+          }
+        }
+      }
+
+      return { ok: false, hops: [] };
+    }
+
+    const nextHopIp = best.nextHop;
+    if (ipv4ToInt(nextHopIp) === null) return { ok: false, hops: [] };
+
+    const nextHops = this.findActiveIpEndpoints(nextHopIp);
+    if (nextHops.length === 0) return { ok: false, hops: [] };
+
+    let bestPartial:
+      | { originSourceIp?: string; reachedDeviceId?: string; hops: string[] }
+      | null = null;
+
+    for (const srcIface of Object.values(fromDevice.config.interfaces)) {
+      if (!srcIface.adminUp) continue;
+      if (!srcIface.ipv4Address || !srcIface.ipv4Mask) continue;
+      if (!this.isInterfaceOperUp(fromDevice.id, srcIface.name)) continue;
+      if (!inSameSubnet(srcIface.ipv4Address, srcIface.ipv4Mask, nextHopIp)) continue;
+
+      const srcEp: LinkEndpoint = { deviceId: fromDevice.id, interfaceName: srcIface.name };
+
+      for (const nh of nextHops) {
+        if (!inSameSubnet(nextHopIp, nh.mask, srcIface.ipv4Address)) continue;
+        if (!this.l2Reachable(srcEp, nh.ep)) continue;
+
+        this.learnArp(fromDevice.id, nextHopIp, macForEndpoint(nh.ep), srcIface.name);
+        this.learnArp(nh.ep.deviceId, srcIface.ipv4Address, macForEndpoint(srcEp), nh.ep.interfaceName);
+
+        const nextOrigin = originSourceIp ?? srcIface.ipv4Address;
+        const hop = this.traceToIp(nh.ep.deviceId, targetIp, maxHops - 1, new Set(visited), nextOrigin);
+        const hops = [nextHopIp, ...hop.hops];
+
+        if (hop.ok) {
+          return {
+            ok: true,
+            originSourceIp: hop.originSourceIp ?? nextOrigin,
+            reachedDeviceId: hop.reachedDeviceId,
+            hops
+          };
+        }
+
+        if (!bestPartial || hops.length > bestPartial.hops.length) {
+          bestPartial = {
+            originSourceIp: hop.originSourceIp ?? nextOrigin,
+            reachedDeviceId: hop.reachedDeviceId,
+            hops
+          };
+        }
+      }
+    }
+
+    if (bestPartial) {
+      return {
+        ok: false,
+        originSourceIp: bestPartial.originSourceIp,
+        reachedDeviceId: bestPartial.reachedDeviceId,
+        hops: bestPartial.hops
+      };
+    }
+
+    return { ok: false, hops: [] };
+  }
+
+  private learnArp(deviceId: string, ip: string, mac: string, interfaceName: string): void {
+    if (ipv4ToInt(ip) === null) return;
+    let table = this.arpTables.get(deviceId);
+    if (!table) {
+      table = new Map();
+      this.arpTables.set(deviceId, table);
+    }
+    table.set(ip, { mac, interfaceName, learnedAt: Date.now() });
   }
 
   private endpointKey(ep: LinkEndpoint): string {
@@ -399,5 +577,6 @@ export class World {
   reset(): void {
     this.devices.clear();
     this.links.clear();
+    this.arpTables.clear();
   }
 }

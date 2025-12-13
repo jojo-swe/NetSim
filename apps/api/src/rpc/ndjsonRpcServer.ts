@@ -12,6 +12,10 @@ type WorldLike = {
   reset(): void;
   isInterfaceOperUp(deviceId: string, interfaceName: string): boolean;
   canPing(fromDeviceId: string, targetIp: string): boolean;
+  traceRoute(fromDeviceId: string, targetIp: string): { ok: boolean; hops: string[] };
+  getArpTable(
+    deviceId: string
+  ): Array<{ ip: string; mac: string; interfaceName: string; ageMinutes: number }>;
   getLinkPeer(endpoint: LinkEndpoint): LinkEndpoint | null;
 };
 
@@ -113,6 +117,20 @@ export function createNdjsonRpcServer(world: WorldLike): net.Server {
       const fromDeviceId = asString(p.fromDeviceId, "fromDeviceId");
       const targetIp = asString(p.targetIp, "targetIp");
       return { ok: world.canPing(fromDeviceId, targetIp) };
+    },
+
+    "world.traceRoute": async (params) => {
+      const p = asObject(params);
+      const fromDeviceId = asString(p.fromDeviceId, "fromDeviceId");
+      const targetIp = asString(p.targetIp, "targetIp");
+      const result = world.traceRoute(fromDeviceId, targetIp);
+      return { ok: result.ok, hops: result.hops };
+    },
+
+    "world.getArpTable": async (params) => {
+      const p = asObject(params);
+      const deviceId = asString(p.deviceId, "deviceId");
+      return { entries: world.getArpTable(deviceId) };
     },
 
     "device.setHostname": async (params) => {
