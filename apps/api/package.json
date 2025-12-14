@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "regress:next-hop": "tsx src/regression/nextHopReachability.ts",
+    "regress:cables": "tsx src/regression/cableCompatibility.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },

@@ -1,4 +1,4 @@
-export type DeviceType = "router" | "switch" | "host" | "l3switch" | "firewall" | "server" | "cloud";
+export type DeviceType = "router" | "switch" | "host" | "pc" | "l3switch" | "firewall" | "server" | "cloud";
 
 export type PortKind = "rj45" | "sfp";
 
@@ -19,6 +19,8 @@ export function deviceCapabilities(type: DeviceType): DeviceCapabilities {
       return { canBridgeL2: true, canRouteL3: false, defaultAdminUp: true, defaultHostname: "Switch" };
     case "host":
       return { canBridgeL2: false, canRouteL3: false, defaultAdminUp: true, defaultHostname: "Host" };
+    case "pc":
+      return { canBridgeL2: false, canRouteL3: false, defaultAdminUp: true, defaultHostname: "PC" };
     case "l3switch":
       return { canBridgeL2: true, canRouteL3: true, defaultAdminUp: true, defaultHostname: "L3Switch" };
     case "firewall":
@@ -60,6 +62,8 @@ export function devicePorts(type: DeviceType): DevicePort[] {
     case "server":
       return [...rangePorts("GigabitEthernet0/", 0, 2, "rj45")];
     case "host":
+      return [...rangePorts("GigabitEthernet0/", 0, 1, "rj45")];
+    case "pc":
       return [...rangePorts("GigabitEthernet0/", 0, 1, "rj45")];
     case "cloud":
       return [...rangePorts("GigabitEthernet0/", 0, 8, "rj45"), ...rangePorts("GigabitEthernet0/", 8, 2, "sfp")];
