@@ -266,6 +266,23 @@ export class CliSession {
         return { output: "", prompt: this.getPrompt() };
       }
 
+      if (lower.startsWith("ip default-gateway ")) {
+        const gw = line.substring("ip default-gateway ".length).trim();
+        if (!gw) {
+          return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+        }
+        if (ipv4ToInt(gw) === null) {
+          return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+        }
+        this.device.config.defaultGateway = gw;
+        return { output: "", prompt: this.getPrompt() };
+      }
+
+      if (lower === "no ip default-gateway") {
+        this.device.config.defaultGateway = undefined;
+        return { output: "", prompt: this.getPrompt() };
+      }
+
       if (lower.startsWith("ip route ")) {
         const rest = line.substring("ip route ".length).trim();
         const [destination, mask, nextHop] = rest.split(" ");
@@ -366,9 +383,9 @@ export class CliSession {
 
     if (this.mode === "config") {
       if (t.length === 0) return ["end", "exit", "hostname", "interface", "ip", "no"];
-      if (t.length === 1 && t[0] === "ip") return ["route"];
+      if (t.length === 1 && t[0] === "ip") return ["route", "default-gateway"];
       if (t.length === 1 && t[0] === "no") return ["ip"];
-      if (t.length === 2 && t[0] === "no" && t[1] === "ip") return ["route"];
+      if (t.length === 2 && t[0] === "no" && t[1] === "ip") return ["route", "default-gateway"];
       if (t.length === 1 && t[0] === "interface") {
         return Object.keys(this.device.config.interfaces);
       }
@@ -409,6 +426,11 @@ export class CliSession {
       for (const route of this.device.config.staticRoutes) {
         lines.push(`ip route ${route.destination} ${route.mask} ${route.nextHop}`);
       }
+      lines.push("!");
+    }
+
+    if (this.device.config.defaultGateway) {
+      lines.push(`ip default-gateway ${this.device.config.defaultGateway}`);
       lines.push("!");
     }
 
@@ -456,7 +478,24 @@ export class CliSession {
     const lines: string[] = [];
     lines.push("Codes: C - connected, S - static");
     lines.push("");
-    lines.push("Gateway of last resort is not set");
+
+    const defaultGateway = this.device.config.defaultGateway;
+    const dgIsValid = defaultGateway ? ipv4ToInt(defaultGateway) !== null : false;
+    const dgReachable =
+      dgIsValid &&
+      Object.values(this.device.config.interfaces).some((iface) => {
+        if (!iface.adminUp) return false;
+        const operUp = this.world?.isInterfaceOperUp(this.device.id, iface.name) ?? true;
+        if (!operUp) return false;
+        if (!iface.ipv4Address || !iface.ipv4Mask) return false;
+        return inSameSubnet(iface.ipv4Address, iface.ipv4Mask, defaultGateway as string);
+      });
+
+    if (dgReachable) {
+      lines.push(`Gateway of last resort is ${defaultGateway} to network 0.0.0.0`);
+    } else {
+      lines.push("Gateway of last resort is not set");
+    }
     lines.push("");
 
     const connected: Array<{ network: string; prefixLen: number; ifaceName: string }> = [];
@@ -495,6 +534,10 @@ export class CliSession {
 
       if (!nextHopReachable) continue;
       lines.push(`S    ${route.destination}/${prefixLen} [1/0] via ${route.nextHop}`);
+    }
+
+    if (dgReachable) {
+      lines.push(`S*   0.0.0.0/0 [1/0] via ${defaultGateway}`);
     }
 
     return lines.join("\n") + "\n";
