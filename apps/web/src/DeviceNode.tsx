@@ -80,6 +80,7 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
 
       {/* Label - Floating Below */}
       <div
+        className="device-node-label"
         style={{
           position: "absolute",
           top: "115%",

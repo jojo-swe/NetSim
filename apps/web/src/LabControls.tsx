@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Upload, Save, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Upload, Save, RotateCcw, CheckCircle2, Type, Link2 } from "lucide-react";
 
 type Props = {
   labs: { id: string; title: string }[];
@@ -11,6 +11,10 @@ type Props = {
   onLoad: (file: File) => void;
   onReset: () => void;
   validationResult: { score: number; passed: boolean } | null;
+  showDeviceLabels: boolean;
+  showLinkLabels: boolean;
+  onToggleDeviceLabels: () => void;
+  onToggleLinkLabels: () => void;
 };
 
 export function LabControls({
@@ -22,7 +26,11 @@ export function LabControls({
   onSave,
   onLoad,
   onReset,
-  validationResult
+  validationResult,
+  showDeviceLabels,
+  showLinkLabels,
+  onToggleDeviceLabels,
+  onToggleLinkLabels
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +108,32 @@ export function LabControls({
         
         <button className="btn-icon" onClick={onReset} title="Reset Topology">
           <RotateCcw size={18} />
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <button
+          className="btn-icon"
+          onClick={onToggleDeviceLabels}
+          title={showDeviceLabels ? "Hide device labels" : "Show device labels"}
+          style={{
+            background: showDeviceLabels ? "rgba(255, 255, 255, 0.06)" : "transparent",
+            border: showDeviceLabels ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid transparent"
+          }}
+        >
+          <Type size={18} />
+        </button>
+
+        <button
+          className="btn-icon"
+          onClick={onToggleLinkLabels}
+          title={showLinkLabels ? "Hide cable labels" : "Show cable labels"}
+          style={{
+            background: showLinkLabels ? "rgba(255, 255, 255, 0.06)" : "transparent",
+            border: showLinkLabels ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid transparent"
+          }}
+        >
+          <Link2 size={18} />
         </button>
       </div>
 

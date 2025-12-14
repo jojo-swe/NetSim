@@ -173,6 +173,15 @@ body {
   stroke: var(--text-muted);
   stroke-width: 2;
 }
+
+.hide-device-labels .device-node-label {
+  display: none;
+}
+
+.hide-link-labels .react-flow__edge-text,
+.hide-link-labels .react-flow__edge-textbg {
+  display: none;
+}
 .react-flow__edge.selected .react-flow__edge-path {
   stroke: var(--accent-warning);
   stroke-width: 3;

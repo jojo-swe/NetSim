@@ -81,10 +81,50 @@ export default function App() {
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
 
+  const [showDeviceLabels, setShowDeviceLabels] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem("netsim.showDeviceLabels");
+      if (v === null) return true;
+      return v === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  const [showLinkLabels, setShowLinkLabels] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem("netsim.showLinkLabels");
+      if (v === null) return true;
+      return v === "true";
+    } catch {
+      return true;
+    }
+  });
+
   const [labs, setLabs] = useState<LabDefinition[]>([]);
   const [selectedLabId, setSelectedLabId] = useState<string>("ccna-001");
   const [validation, setValidation] = useState<LabValidationResult | null>(null);
   const [validating, setValidating] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("netsim.showDeviceLabels", String(showDeviceLabels));
+    } catch {}
+  }, [showDeviceLabels]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("netsim.showLinkLabels", String(showLinkLabels));
+    } catch {}
+  }, [showLinkLabels]);
+
+  const toggleDeviceLabels = useCallback(() => {
+    setShowDeviceLabels((v) => !v);
+  }, []);
+
+  const toggleLinkLabels = useCallback(() => {
+    setShowLinkLabels((v) => !v);
+  }, []);
 
   // Load Labs
   useEffect(() => {
@@ -428,7 +468,10 @@ export default function App() {
 
   return (
     <ReactFlowProvider>
-      <div style={{ width: "100%", height: "100%", position: "relative", background: "var(--bg-app)" }}>
+      <div
+        className={`${showDeviceLabels ? "" : "hide-device-labels"} ${showLinkLabels ? "" : "hide-link-labels"}`.trim()}
+        style={{ width: "100%", height: "100%", position: "relative", background: "var(--bg-app)" }}
+      >
         
         {/* Fullscreen Canvas */}
         <ReactFlow
@@ -481,6 +524,10 @@ export default function App() {
                 onLoad={loadLabFromFile}
                 onReset={resetLab}
                 validationResult={validation}
+                showDeviceLabels={showDeviceLabels}
+                showLinkLabels={showLinkLabels}
+                onToggleDeviceLabels={toggleDeviceLabels}
+                onToggleLinkLabels={toggleLinkLabels}
             />
         </div>
 
