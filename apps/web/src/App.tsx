@@ -984,7 +984,7 @@ export default function App() {
               right: 20,
               width: 280,
               maxHeight: "calc(100vh - 360px)",
-              overflow: "auto",
+              overflow: "hidden",
               padding: 12,
               zIndex: 55,
               display: "flex",
@@ -995,7 +995,9 @@ export default function App() {
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", flexDirection: "column" }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Ports</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
+                  {portsPanelSide === "front" ? "Device" : "Ports"}
+                </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                   {selectedDeviceId} ({portsPanelUi.selectedType})
                 </div>
@@ -1004,11 +1006,11 @@ export default function App() {
               <div style={{ display: "flex", gap: 6 }}>
                 <button
                   className="btn-icon"
-                  style={{ padding: 6 }}
+                  style={{ padding: 6, transition: "transform 0.3s ease", transform: portsPanelSide === "back" ? "rotateY(180deg)" : "rotateY(0deg)" }}
                   onClick={() => setPortsPanelSide((s) => (s === "back" ? "front" : "back"))}
                   title={portsPanelSide === "back" ? "Show summary" : "Show ports"}
                 >
-                  {portsPanelSide === "back" ? "⇄" : "⇄"}
+                  ⇄
                 </button>
                 <button
                   className="btn-icon"
@@ -1029,127 +1031,152 @@ export default function App() {
               </div>
             </div>
 
-            {portsPanelSide === "front" ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div
-                  style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid rgba(148, 163, 184, 0.14)",
-                    background: "rgba(15, 23, 42, 0.35)",
-                    display: "grid",
-                    gap: 8
-                  }}
-                >
-                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Quick actions</div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <button
-                      className="btn-icon"
-                      style={{ justifyContent: "flex-start", gap: 8, padding: 10 }}
-                      onClick={() => setPortsPanelSide("back")}
-                      title="Show ports"
-                    >
-                      Show ports
-                    </button>
-                    {armedPort ? (
-                      <button
-                        className="btn-icon"
-                        style={{ justifyContent: "flex-start", gap: 8, padding: 10, borderColor: "rgba(251, 146, 60, 0.35)" }}
-                        onClick={() => setArmedPort(null)}
-                        title="Cancel link mode"
-                      >
-                        Cancel link mode ({armedPort.deviceId} {armedPort.interfaceName})
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                  Tip: click a port on the back side to arm it, then click another device.
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 8 }}>
-                {portsPanelUi.items.map((p) => {
-                  const sid = selectedDeviceId;
-                  if (!sid) return null;
-
-                  const status = !p.connected ? "unused" : p.operUp ? "up" : "down";
-                  const statusColor =
-                    status === "up"
-                      ? "rgba(34, 197, 94, 0.95)"
-                      : status === "down"
-                        ? "rgba(251, 146, 60, 0.95)"
-                        : "rgba(148, 163, 184, 0.9)";
-
-                  const borderColor = p.isArmed ? "rgba(251, 146, 60, 0.45)" : "rgba(148, 163, 184, 0.14)";
-                  const bg = p.isArmed ? "rgba(251, 146, 60, 0.08)" : "rgba(15, 23, 42, 0.35)";
-
-                  return (
+            <div className={`flip-card${portsPanelSide === "back" ? " flipped" : ""}`} style={{ minHeight: 180 }}>
+              <div className="flip-card-inner">
+                <div className="flip-card-front" style={{ overflow: "auto", maxHeight: "calc(100vh - 460px)" }}>
+                  {/* FRONT: summary / quick actions */}
+                  <div style={{ display: "grid", gap: 10 }}>
                     <div
-                      key={p.name}
                       style={{
                         padding: 10,
                         borderRadius: 10,
-                        border: `1px solid ${borderColor}`,
-                        background: bg,
+                        border: "1px solid rgba(148, 163, 184, 0.14)",
+                        background: "rgba(15, 23, 42, 0.35)",
                         display: "grid",
-                        gap: 6,
-                        cursor: p.connected ? "default" : "pointer"
+                        gap: 8
                       }}
-                      onClick={() => {
-                        if (p.connected) return;
-                        setArmedPort((prev) => {
-                          if (prev && prev.deviceId === sid && prev.interfaceName === p.name) return null;
-                          return { deviceId: sid, interfaceName: p.name };
-                        });
-                      }}
-                      title={p.connected ? undefined : "Click to start link from this port"}
                     >
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{p.name}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.kind.toUpperCase()}</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <div style={{ width: 8, height: 8, borderRadius: 99, background: statusColor }} />
-                            <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{status.toUpperCase()}</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {p.connected ? (
-                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                          {p.peer}
-                          {p.cableType ? ` ${cableTypeSuffix(p.cableType)}` : ""}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.isArmed ? "Link mode: click a target device" : "Not connected"}</div>
-                      )}
-
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>Admin: {p.adminUp ? "up" : "down"}</div>
-
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Quick actions</div>
+                      <div style={{ display: "grid", gap: 8 }}>
                         <button
                           className="btn-icon"
-                          style={{ padding: "4px 8px" }}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            void (async () => {
-                              await setInterfaceAdminUp(sid, p.name, !p.adminUp).catch(() => {});
-                              await refreshDevices();
-                            })();
-                          }}
-                          title={p.adminUp ? "Shutdown" : "No shutdown"}
+                          style={{ justifyContent: "flex-start", gap: 8, padding: 10 }}
+                          onClick={() => setPortsPanelSide("back")}
+                          title="Show ports"
                         >
-                          {p.adminUp ? "down" : "up"}
+                          Show ports
                         </button>
+                        {armedPort ? (
+                          <button
+                            className="btn-icon"
+                            style={{ justifyContent: "flex-start", gap: 8, padding: 10, borderColor: "rgba(251, 146, 60, 0.35)" }}
+                            onClick={() => setArmedPort(null)}
+                            title="Cancel link mode"
+                          >
+                            Cancel link mode ({armedPort.deviceId} {armedPort.interfaceName})
+                          </button>
+                        ) : null}
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      Tip: click a port on the back side to arm it, then click another device.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flip-card-back" style={{ overflow: "auto", maxHeight: "calc(100vh - 460px)" }}>
+                  {/* BACK: ports list */}
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {portsPanelUi.items.map((p) => {
+                      const sid = selectedDeviceId;
+                      if (!sid) return null;
+
+                      const status = !p.connected ? "unused" : p.operUp ? "up" : "down";
+                      const statusColor =
+                        status === "up"
+                          ? "rgba(34, 197, 94, 0.95)"
+                          : status === "down"
+                            ? "rgba(251, 146, 60, 0.95)"
+                            : "rgba(148, 163, 184, 0.9)";
+
+                      const borderColor = p.isArmed ? "rgba(251, 146, 60, 0.45)" : "rgba(148, 163, 184, 0.14)";
+                      const bg = p.isArmed ? "rgba(251, 146, 60, 0.08)" : "rgba(15, 23, 42, 0.35)";
+
+                      return (
+                        <div
+                          key={p.name}
+                          style={{
+                            padding: 10,
+                            borderRadius: 10,
+                            border: `1px solid ${borderColor}`,
+                            background: bg,
+                            display: "grid",
+                            gap: 6,
+                            cursor: p.connected ? "default" : "pointer"
+                          }}
+                          onClick={() => {
+                            if (p.connected) return;
+                            setArmedPort((prev) => {
+                              if (prev && prev.deviceId === sid && prev.interfaceName === p.name) return null;
+                              return { deviceId: sid, interfaceName: p.name };
+                            });
+                          }}
+                          title={p.connected ? undefined : "Click to start link from this port"}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{p.name}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.kind.toUpperCase()}</div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <div style={{ width: 8, height: 8, borderRadius: 99, background: statusColor }} />
+                                <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{status.toUpperCase()}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {p.connected ? (
+                            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                              {p.peer}
+                              {p.cableType ? ` ${cableTypeSuffix(p.cableType)}` : ""}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.isArmed ? "Link mode: click a target device" : "Not connected"}</div>
+                          )}
+
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>Admin: {p.adminUp ? "up" : "down"}</div>
+
+                            <button
+                              className="btn-icon"
+                              style={{ padding: "4px 8px" }}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const newAdminUp = !p.adminUp;
+                                setDevicesById((prev) => {
+                                  const device = prev[sid];
+                                  if (!device) return prev;
+                                  const ifaces = device.config?.interfaces ?? {};
+                                  const iface = ifaces[p.name] ?? { name: p.name };
+                                  return {
+                                    ...prev,
+                                    [sid]: {
+                                      ...device,
+                                      config: {
+                                        ...device.config,
+                                        interfaces: {
+                                          ...ifaces,
+                                          [p.name]: { ...iface, adminUp: newAdminUp }
+                                        }
+                                      }
+                                    }
+                                  };
+                                });
+                                void setInterfaceAdminUp(sid, p.name, newAdminUp).catch(() => {});
+                              }}
+                              title={p.adminUp ? "Shutdown" : "No shutdown"}
+                            >
+                              {p.adminUp ? "down" : "up"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         ) : null}
 
