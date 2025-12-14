@@ -1,13 +1,25 @@
 import { motion } from "framer-motion";
-import { Router, Box, Server } from "lucide-react";
+import { Router, Box, Server, Shield, Cloud, Layers2, Monitor } from "lucide-react";
 
 type Props = {
   onAddRouter: () => void;
   onAddSwitch: () => void;
+  onAddL3Switch: () => void;
+  onAddFirewall: () => void;
+  onAddServer: () => void;
+  onAddCloud: () => void;
   onAddHost: () => void;
 };
 
-export function DevicePalette({ onAddRouter, onAddSwitch, onAddHost }: Props) {
+export function DevicePalette({
+  onAddRouter,
+  onAddSwitch,
+  onAddL3Switch,
+  onAddFirewall,
+  onAddServer,
+  onAddCloud,
+  onAddHost
+}: Props) {
   return (
     <motion.div
       initial={{ x: -100, opacity: 0 }}
@@ -43,8 +55,36 @@ export function DevicePalette({ onAddRouter, onAddSwitch, onAddHost }: Props) {
       </div>
 
       <div className="tooltip-container" style={{ position: "relative" }}>
+        <button className="device-btn" onClick={onAddL3Switch}>
+          <Layers2 size={24} color="#FBBF24" />
+        </button>
+        <span className="tooltip">Add L3 Switch</span>
+      </div>
+
+      <div className="tooltip-container" style={{ position: "relative" }}>
+        <button className="device-btn" onClick={onAddFirewall}>
+          <Shield size={24} color="#F87171" />
+        </button>
+        <span className="tooltip">Add Firewall</span>
+      </div>
+
+      <div className="tooltip-container" style={{ position: "relative" }}>
+        <button className="device-btn" onClick={onAddServer}>
+          <Server size={24} color="#A78BFA" />
+        </button>
+        <span className="tooltip">Add Server</span>
+      </div>
+
+      <div className="tooltip-container" style={{ position: "relative" }}>
+        <button className="device-btn" onClick={onAddCloud}>
+          <Cloud size={24} color="#60A5FA" />
+        </button>
+        <span className="tooltip">Add Cloud</span>
+      </div>
+
+      <div className="tooltip-container" style={{ position: "relative" }}>
         <button className="device-btn" onClick={onAddHost}>
-          <Server size={24} color="#34D399" />
+          <Monitor size={24} color="#34D399" />
         </button>
         <span className="tooltip">Add Host</span>
       </div>

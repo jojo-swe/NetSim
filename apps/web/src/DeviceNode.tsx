@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, NodeProps, Position } from "reactflow";
-import { Router, Box, Server, Cloud } from "lucide-react";
+import { Router, Box, Server, Cloud, Shield, Layers2, Monitor } from "lucide-react";
 
 /**
  * Modern "Linear" style Device Node
@@ -10,18 +10,26 @@ import { Router, Box, Server, Cloud } from "lucide-react";
  */
 const DeviceNode = ({ data, selected }: NodeProps) => {
   const label = data.label.toLowerCase();
-  const isRouter = label.includes("router") || data.deviceId.startsWith("R");
-  const isSwitch = label.includes("switch") || data.deviceId.startsWith("SW");
-  const isHost = label.includes("host") || data.deviceId.startsWith("H");
-  const isServer = label.includes("server");
-  const isCloud = label.includes("cloud") || label.includes("internet");
+  const upperId = data.deviceId.toUpperCase();
+
+  const isRouter = label.includes("router") || upperId.startsWith("R");
+  const isL3Switch =
+    upperId.startsWith("L3SW") || (label.includes("l3") && label.includes("switch"));
+  const isSwitch = label.includes("switch") || upperId.startsWith("SW");
+  const isFirewall = label.includes("firewall") || upperId.startsWith("FW");
+  const isServer = label.includes("server") || upperId.startsWith("SRV");
+  const isCloud = label.includes("cloud") || label.includes("internet") || upperId.startsWith("CLOUD");
+  const isHost = label.includes("host") || upperId.startsWith("H");
 
   // Icon Selection
   let Icon = Box;
   if (isRouter) Icon = Router;
+  else if (isL3Switch) Icon = Layers2;
   else if (isSwitch) Icon = Box; // Switch often looks like a box with arrows, but Box is clean for now. 
-  else if (isHost || isServer) Icon = Server;
+  else if (isFirewall) Icon = Shield;
   else if (isCloud) Icon = Cloud;
+  else if (isServer) Icon = Server;
+  else if (isHost) Icon = Monitor;
   // actually let's use a specific look for switch if possible or just generic. 
   // Lucide doesn't have a perfect "Switch" icon, so we use Box or maybe something else.
   // Let's stick to Box for switch, Router for Router.
