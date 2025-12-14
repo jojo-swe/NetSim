@@ -159,6 +159,61 @@ function testUnreachableStaticDoesNotOverrideReachableSpecificRoute(): void {
   assert(!r.includes("192.168.99.99"), "show ip route should not show unreachable static next-hop");
 }
 
+function testL3SwitchBridgesL2(): void {
+  const world = new World();
+  world.createDevice({ id: "H1", type: "host" });
+  world.createDevice({ id: "H2", type: "host" });
+  world.createDevice({ id: "L3SW1", type: "l3switch" });
+
+  world.createLink({
+    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" }
+  });
+  world.createLink({
+    a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" }
+  });
+
+  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+  setIf(world, "H2", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+
+  assert(world.canPing("H1", "10.0.0.2") === true, "ping should succeed across l3switch L2 bridging");
+}
+
+function testL3SwitchRoutesL3(): void {
+  const world = new World();
+  world.createDevice({ id: "H1", type: "host" });
+  world.createDevice({ id: "H2", type: "host" });
+  world.createDevice({ id: "L3SW1", type: "l3switch" });
+
+  world.createLink({
+    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" }
+  });
+  world.createLink({
+    a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" }
+  });
+
+  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+  world.getDevice("H1")!.config.defaultGateway = "10.0.0.1";
+
+  setIf(world, "L3SW1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+  setIf(world, "L3SW1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+
+  setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+  world.getDevice("H2")!.config.defaultGateway = "10.0.1.1";
+
+  assert(world.canPing("H1", "10.0.1.2") === true, "ping should succeed via l3switch routing");
+
+  const tr = world.traceRoute("H1", "10.0.1.2");
+  assert(tr.ok === true, "traceroute should succeed");
+  assert(
+    JSON.stringify(tr.hops) === JSON.stringify(["10.0.0.1", "10.0.1.2"]),
+    `unexpected traceroute hops: ${JSON.stringify(tr.hops)}`
+  );
+}
+
 const tests: Array<{ name: string; run: () => void }> = [
   { name: "unreachable default-gateway is ignored", run: testUnreachableDefaultGateway },
   {
@@ -168,7 +223,9 @@ const tests: Array<{ name: string; run: () => void }> = [
   {
     name: "unreachable static route does not override reachable static route",
     run: testUnreachableStaticDoesNotOverrideReachableSpecificRoute
-  }
+  },
+  { name: "l3switch bridges l2 between hosts", run: testL3SwitchBridgesL2 },
+  { name: "l3switch routes l3 between subnets", run: testL3SwitchRoutesL3 }
 ];
 
 let failed = 0;
