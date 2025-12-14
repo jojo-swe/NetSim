@@ -294,8 +294,21 @@ export class World {
       }
     }
 
+    const nextHopReachable = (nextHop: string): boolean => {
+      if (ipv4ToInt(nextHop) === null) return false;
+      for (const iface of Object.values(device.config.interfaces)) {
+        if (!iface.adminUp) continue;
+        if (!iface.ipv4Address || !iface.ipv4Mask) continue;
+        if (!this.isInterfaceOperUp(device.id, iface.name)) continue;
+        if (!inSameSubnet(iface.ipv4Address, iface.ipv4Mask, nextHop)) continue;
+        return true;
+      }
+      return false;
+    };
+
     for (const sr of device.config.staticRoutes) {
       if (!ipMatchesDestination(targetIp, sr.destination, sr.mask)) continue;
+      if (!nextHopReachable(sr.nextHop)) continue;
       const prefixLen = maskToPrefixLen(sr.mask) ?? 0;
       if (!best || prefixLen > best.prefixLen) {
         best = { kind: "static", nextHop: sr.nextHop, prefixLen };
@@ -303,7 +316,7 @@ export class World {
     }
 
     const dg = device.config.defaultGateway;
-    if (dg && ipv4ToInt(dg) !== null) {
+    if (dg && nextHopReachable(dg)) {
       const prefixLen = 0;
       if (!best) {
         best = { kind: "static", nextHop: dg, prefixLen };
