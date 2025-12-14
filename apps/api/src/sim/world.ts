@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   deviceCapabilities,
+  deviceIsMdix,
+  devicePortKind,
   type Device,
   type DeviceType,
   type InterfaceConfig,
+  type CableType,
   type Link,
   type LinkEndpoint
 } from "./types.js";
@@ -79,6 +82,66 @@ function macForEndpoint(ep: LinkEndpoint): string {
   return bytes.map((b) => b.toString(16).padStart(2, "0")).join(":");
 }
 
+function resolveCableType(
+  cableType: CableType,
+  a: { deviceType: DeviceType; interfaceName: string },
+  b: { deviceType: DeviceType; interfaceName: string }
+): Exclude<CableType, "auto"> {
+  const aKind = devicePortKind(a.deviceType, a.interfaceName);
+  const bKind = devicePortKind(b.deviceType, b.interfaceName);
+
+  // Unknown port kinds (e.g. legacy interface names): treat as RJ45.
+  const aK = aKind ?? "rj45";
+  const bK = bKind ?? "rj45";
+
+  if (cableType === "auto") {
+    if (aK === "sfp" || bK === "sfp") return "fiber";
+
+    const aIsMdix = deviceIsMdix(a.deviceType);
+    const bIsMdix = deviceIsMdix(b.deviceType);
+    const sameRole = aIsMdix === bIsMdix;
+    return sameRole ? "copper_crossover" : "copper_straight";
+  }
+
+  return cableType;
+}
+
+function validateCableType(
+  cableType: Exclude<CableType, "auto">,
+  a: { deviceType: DeviceType; interfaceName: string },
+  b: { deviceType: DeviceType; interfaceName: string }
+): void {
+  const aKind = devicePortKind(a.deviceType, a.interfaceName);
+  const bKind = devicePortKind(b.deviceType, b.interfaceName);
+
+  const aK = aKind ?? "rj45";
+  const bK = bKind ?? "rj45";
+
+  if (cableType === "fiber") {
+    if (aK !== "sfp" || bK !== "sfp") {
+      throw new Error("Fiber cable requires SFP ports on both ends");
+    }
+    return;
+  }
+
+  // Copper requires RJ45 on both ends.
+  if (aK !== "rj45" || bK !== "rj45") {
+    throw new Error("Copper cable requires RJ45 ports on both ends");
+  }
+
+  // Straight/crossover selection based on simplified MDI/MDI-X roles.
+  const aIsMdix = deviceIsMdix(a.deviceType);
+  const bIsMdix = deviceIsMdix(b.deviceType);
+  const sameRole = aIsMdix === bIsMdix;
+
+  if (cableType === "copper_straight" && sameRole) {
+    throw new Error("Straight-through cable requires one MDI and one MDI-X port");
+  }
+  if (cableType === "copper_crossover" && !sameRole) {
+    throw new Error("Crossover cable requires both ends to be MDI or both ends to be MDI-X");
+  }
+}
+
 export class World {
   private devices = new Map<string, Device>();
   private links = new Map<string, Link>();
@@ -113,7 +176,9 @@ export class World {
     }
     if (snapshot.links) {
       for (const link of snapshot.links) {
-        this.links.set(link.id, JSON.parse(JSON.stringify(link)) as Link);
+        const cloned = JSON.parse(JSON.stringify(link)) as any;
+        if (!cloned.cableType) cloned.cableType = "auto";
+        this.links.set(link.id, cloned as Link);
       }
     }
   }
@@ -154,7 +219,7 @@ export class World {
     return device;
   }
 
-  createLink(input: { id?: string; a: LinkEndpoint; b: LinkEndpoint }): Link {
+  createLink(input: { id?: string; a: LinkEndpoint; b: LinkEndpoint; cableType?: CableType }): Link {
     if (input.a.deviceId === input.b.deviceId && input.a.interfaceName === input.b.interfaceName) {
       throw new Error("Invalid link endpoints");
     }
@@ -179,11 +244,24 @@ export class World {
       throw new Error("Interface already connected");
     }
 
+    const desiredCableType: CableType = input.cableType ?? "auto";
+    const resolvedCableType = resolveCableType(
+      desiredCableType,
+      { deviceType: aDevice.type, interfaceName: input.a.interfaceName },
+      { deviceType: bDevice.type, interfaceName: input.b.interfaceName }
+    );
+    validateCableType(
+      resolvedCableType,
+      { deviceType: aDevice.type, interfaceName: input.a.interfaceName },
+      { deviceType: bDevice.type, interfaceName: input.b.interfaceName }
+    );
+
     const id = input.id ?? randomUUID();
     const link: Link = {
       id,
       a: { deviceId: input.a.deviceId, interfaceName: input.a.interfaceName },
-      b: { deviceId: input.b.deviceId, interfaceName: input.b.interfaceName }
+      b: { deviceId: input.b.deviceId, interfaceName: input.b.interfaceName },
+      cableType: resolvedCableType
     };
     this.links.set(id, link);
     return link;

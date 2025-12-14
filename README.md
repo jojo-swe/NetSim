@@ -8,6 +8,12 @@ Goals:
 - Use Cisco-like configuration modes and commands (incrementally implemented).
 - Save/share labs and run validations with hints.
 
+## Roadmap (near-term)
+
+- Interface-level link attachment (choose ports, not just devices).
+- Cable types (copper straight/crossover, fiber) with compatibility validation.
+- Visual link status (up/down) and per-interface state indicators.
+
 Non-goals:
 
 - Shipping proprietary Cisco images/firmware. NetSim is a simulator. If later we add “real image” integration, you’ll provide the images yourself.

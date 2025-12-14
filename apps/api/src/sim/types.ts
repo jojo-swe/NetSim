@@ -2,7 +2,7 @@ export type DeviceType = "router" | "switch" | "host" | "l3switch" | "firewall" 
 
 export type PortKind = "rj45" | "sfp";
 
-export type CableType = "copper_straight" | "copper_crossover" | "fiber";
+export type CableType = "auto" | "copper_straight" | "copper_crossover" | "fiber";
 
 export type DeviceCapabilities = {
   canBridgeL2: boolean;
@@ -50,9 +50,9 @@ export function devicePorts(type: DeviceType): DevicePort[] {
   // Port kinds are used for validating cable media (RJ45 vs SFP).
   switch (type) {
     case "switch":
-      return [...rangePorts("GigabitEthernet0/", 0, 24, "rj45"), ...rangePorts("GigabitEthernet0/", 24, 4, "sfp")];
+      return [...rangePorts("GigabitEthernet0/", 0, 48, "rj45"), ...rangePorts("GigabitEthernet0/", 48, 4, "sfp")];
     case "l3switch":
-      return [...rangePorts("GigabitEthernet0/", 0, 24, "rj45"), ...rangePorts("GigabitEthernet0/", 24, 4, "sfp")];
+      return [...rangePorts("GigabitEthernet0/", 0, 48, "rj45"), ...rangePorts("GigabitEthernet0/", 48, 4, "sfp")];
     case "router":
       return [...rangePorts("GigabitEthernet0/", 0, 4, "rj45"), ...rangePorts("GigabitEthernet0/", 4, 2, "sfp")];
     case "firewall":

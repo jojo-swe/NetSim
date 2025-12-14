@@ -38,11 +38,13 @@ function testUnreachableDefaultGateway(): void {
 
   world.createLink({
     a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
   world.createLink({
     a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
 
   setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
@@ -71,11 +73,13 @@ function testUnreachableStaticDefaultDoesNotOverrideReachableDefaultGateway(): v
 
   world.createLink({
     a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
   world.createLink({
     a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
 
   setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
@@ -114,15 +118,18 @@ function testUnreachableStaticDoesNotOverrideReachableSpecificRoute(): void {
 
   world.createLink({
     a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
   world.createLink({
     a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "R2", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "R2", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
   world.createLink({
     a: { deviceId: "R2", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
 
   setIf(world, "H1", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
@@ -167,11 +174,13 @@ function testL3SwitchBridgesL2(): void {
 
   world.createLink({
     a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
   world.createLink({
     a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" }
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
+    cableType: "auto"
   });
 
   setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
@@ -188,11 +197,49 @@ function testL3SwitchRoutesL3(): void {
 
   world.createLink({
     a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" }
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
   });
   world.createLink({
     a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" }
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
+    cableType: "auto"
+  });
+
+  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+  world.getDevice("H1")!.config.defaultGateway = "10.0.0.1";
+
+  setIf(world, "L3SW1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+  setIf(world, "L3SW1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+
+  setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+  world.getDevice("H2")!.config.defaultGateway = "10.0.1.1";
+
+  assert(world.canPing("H1", "10.0.1.2") === true, "ping should succeed via l3switch routing");
+
+  const tr = world.traceRoute("H1", "10.0.1.2");
+  assert(tr.ok === true, "traceroute should succeed");
+  assert(
+    JSON.stringify(tr.hops) === JSON.stringify(["10.0.0.1", "10.0.1.2"]),
+    `unexpected traceroute hops: ${JSON.stringify(tr.hops)}`
+  );
+}
+
+function testL3SwitchRoutesBetweenVlans(): void {
+  const world = new World();
+  world.createDevice({ id: "H1", type: "host" });
+  world.createDevice({ id: "H2", type: "host" });
+  world.createDevice({ id: "L3SW1", type: "l3switch" });
+
+  world.createLink({
+    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
+    cableType: "auto"
+  });
+  world.createLink({
+    a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
+    cableType: "auto"
   });
 
   setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);

@@ -6,7 +6,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { CliSession } from "./cli/cliSession.js";
 import { createNdjsonRpcServer } from "./rpc/ndjsonRpcServer.js";
 import { labs, validateLab } from "./labs/index.js";
-import type { DeviceType, Link } from "./sim/types.js";
+import type { CableType, DeviceType, Link } from "./sim/types.js";
 import { World } from "./sim/world.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -75,6 +75,7 @@ app.post("/api/links", (req: Request, res: Response) => {
   const body = req.body as {
     a?: { deviceId?: string; interfaceName?: string };
     b?: { deviceId?: string; interfaceName?: string };
+    cableType?: CableType;
   };
 
   const aDeviceId = body?.a?.deviceId;
@@ -88,10 +89,18 @@ app.post("/api/links", (req: Request, res: Response) => {
   const aIf = body.a?.interfaceName ?? allocateInterfaceName(aDeviceId);
   const bIf = body.b?.interfaceName ?? allocateInterfaceName(bDeviceId);
 
+  const cableTypeRaw = body.cableType ?? "auto";
+  const allowed: CableType[] = ["auto", "copper_straight", "copper_crossover", "fiber"];
+  if (!allowed.includes(cableTypeRaw)) {
+    res.status(400).json({ error: "Invalid cableType" });
+    return;
+  }
+
   try {
     const link = world.createLink({
       a: { deviceId: aDeviceId, interfaceName: aIf },
-      b: { deviceId: bDeviceId, interfaceName: bIf }
+      b: { deviceId: bDeviceId, interfaceName: bIf },
+      cableType: cableTypeRaw
     });
     res.status(201).json({ link });
   } catch (err) {
