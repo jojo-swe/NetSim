@@ -160,6 +160,8 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<DeviceNodeData>(initialNodes);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [showPortsPanel, setShowPortsPanel] = useState<boolean>(true);
+  const [devicesById, setDevicesById] = useState<Record<string, any>>({});
 
   const [linkWizard, setLinkWizard] = useState<null | {
     sourceId: string;
@@ -195,6 +197,36 @@ export default function App() {
   const [selectedLabId, setSelectedLabId] = useState<string>("ccna-001");
   const [validation, setValidation] = useState<LabValidationResult | null>(null);
   const [validating, setValidating] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (selectedDeviceId) setShowPortsPanel(true);
+  }, [selectedDeviceId]);
+
+  const refreshDevices = useCallback(async () => {
+    try {
+      const resp = await fetch(`${apiOrigin}/api/devices`);
+      const json = (await resp.json()) as { devices?: any[] };
+      const list = Array.isArray(json.devices) ? json.devices : [];
+      const next: Record<string, any> = {};
+      for (const d of list) {
+        const id = typeof d?.id === "string" ? d.id : "";
+        if (!id) continue;
+        next[id] = d;
+      }
+      setDevicesById(next);
+    } catch {}
+  }, [apiOrigin]);
+
+  useEffect(() => {
+    if (!selectedDeviceId) return;
+    void refreshDevices();
+  }, [refreshDevices, selectedDeviceId]);
+
+  const defaultAdminUpFor = useCallback((type: DeviceType): boolean => {
+    if (type === "router") return false;
+    if (type === "firewall") return false;
+    return true;
+  }, []);
 
   useEffect(() => {
     try {
@@ -313,6 +345,78 @@ export default function App() {
     },
     [edges]
   );
+
+  const findPortLinkInfo = useCallback(
+    (
+      deviceId: string,
+      interfaceName: string
+    ): { peerDeviceId: string; peerInterfaceName: string; cableType?: string } | null => {
+      if (!interfaceName) return null;
+      for (const e of edges as any[]) {
+        const d = e?.data;
+        const cableType = typeof d?.cableType === "string" ? d.cableType : undefined;
+
+        if (
+          d?.a?.deviceId === deviceId &&
+          d?.a?.interfaceName === interfaceName &&
+          typeof d?.b?.deviceId === "string" &&
+          typeof d?.b?.interfaceName === "string"
+        ) {
+          return { peerDeviceId: d.b.deviceId, peerInterfaceName: d.b.interfaceName, cableType };
+        }
+
+        if (
+          d?.b?.deviceId === deviceId &&
+          d?.b?.interfaceName === interfaceName &&
+          typeof d?.a?.deviceId === "string" &&
+          typeof d?.a?.interfaceName === "string"
+        ) {
+          return { peerDeviceId: d.a.deviceId, peerInterfaceName: d.a.interfaceName, cableType };
+        }
+      }
+      return null;
+    },
+    [edges]
+  );
+
+  const portsPanelUi = useMemo(() => {
+    if (!selectedDeviceId) return null;
+    if (!showPortsPanel) return null;
+
+    const selectedType = inferDeviceType(selectedDeviceId);
+    const ports = devicePorts(selectedType);
+
+    const selectedDevice = devicesById[selectedDeviceId];
+    const selectedIfaces = selectedDevice?.config?.interfaces;
+
+    const items = ports.map((p) => {
+      const link = findPortLinkInfo(selectedDeviceId, p.name);
+      const selectedIface = selectedIfaces?.[p.name];
+      const adminUp = typeof selectedIface?.adminUp === "boolean" ? selectedIface.adminUp : defaultAdminUpFor(selectedType);
+
+      let peerAdminUp: boolean | null = null;
+      if (link) {
+        const peerDevice = devicesById[link.peerDeviceId];
+        const peerIface = peerDevice?.config?.interfaces?.[link.peerInterfaceName];
+        peerAdminUp = typeof peerIface?.adminUp === "boolean" ? peerIface.adminUp : null;
+      }
+
+      const connected = Boolean(link);
+      const operUp = connected && adminUp && (peerAdminUp === null ? true : peerAdminUp);
+
+      return {
+        name: p.name,
+        kind: p.kind,
+        connected,
+        adminUp,
+        operUp,
+        peer: link ? `${link.peerDeviceId} ${link.peerInterfaceName}` : "",
+        cableType: link?.cableType
+      };
+    });
+
+    return { selectedType, items };
+  }, [defaultAdminUpFor, devicesById, findPortLinkInfo, inferDeviceType, selectedDeviceId, showPortsPanel]);
 
   const availablePorts = useCallback(
     (deviceId: string): DevicePort[] => {
@@ -813,6 +917,100 @@ export default function App() {
             deviceId={selectedDeviceId} 
             onClose={() => setSelectedDeviceId(null)} 
         />
+
+        {portsPanelUi ? (
+          <div
+            className="glass-panel"
+            style={{
+              position: "absolute",
+              top: 320,
+              right: 20,
+              width: 280,
+              maxHeight: "calc(100vh - 360px)",
+              overflow: "auto",
+              padding: 12,
+              zIndex: 55,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>Ports</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                  {selectedDeviceId} ({portsPanelUi.selectedType})
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  className="btn-icon"
+                  style={{ padding: 6 }}
+                  onClick={() => void refreshDevices()}
+                  title="Refresh"
+                >
+                  ↻
+                </button>
+                <button
+                  className="btn-icon"
+                  style={{ padding: 6 }}
+                  onClick={() => setShowPortsPanel(false)}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {portsPanelUi.items.map((p) => {
+                const status = !p.connected ? "unused" : p.operUp ? "up" : "down";
+                const statusColor =
+                  status === "up" ? "rgba(34, 197, 94, 0.95)" : status === "down" ? "rgba(251, 146, 60, 0.95)" : "rgba(148, 163, 184, 0.9)";
+
+                return (
+                  <div
+                    key={p.name}
+                    style={{
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid rgba(148, 163, 184, 0.14)",
+                      background: "rgba(15, 23, 42, 0.35)",
+                      display: "grid",
+                      gap: 6
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{p.name}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.kind.toUpperCase()}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <div style={{ width: 8, height: 8, borderRadius: 99, background: statusColor }} />
+                          <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{status.toUpperCase()}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {p.connected ? (
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                        {p.peer}
+                        {p.cableType ? ` ${cableTypeSuffix(p.cableType)}` : ""}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Not connected</div>
+                    )}
+
+                    <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>
+                      Admin: {p.adminUp ? "up" : "down"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {linkWizard ? (
           <div
