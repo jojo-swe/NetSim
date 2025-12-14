@@ -1,15 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Device, DeviceType, InterfaceConfig, Link, LinkEndpoint } from "./types.js";
+import {
+  deviceCapabilities,
+  type Device,
+  type DeviceType,
+  type InterfaceConfig,
+  type Link,
+  type LinkEndpoint
+} from "./types.js";
 
 function defaultHostnameFor(type: DeviceType): string {
-  switch (type) {
-    case "router":
-      return "Router";
-    case "switch":
-      return "Switch";
-    case "host":
-      return "Host";
-  }
+  return deviceCapabilities(type).defaultHostname;
 }
 
 function ensureInterfaceDefaults(name: string, adminUp: boolean): InterfaceConfig {
@@ -132,8 +132,9 @@ export class World {
       return existing;
     }
 
-    const hostname = input.hostname ?? defaultHostnameFor(type);
-    const defaultAdminUp = type !== "router";
+    const caps = deviceCapabilities(type);
+    const hostname = input.hostname ?? caps.defaultHostname;
+    const defaultAdminUp = caps.defaultAdminUp;
 
     const device: Device = {
       id,
@@ -164,13 +165,13 @@ export class World {
     if (!aDevice.config.interfaces[input.a.interfaceName]) {
       aDevice.config.interfaces[input.a.interfaceName] = ensureInterfaceDefaults(
         input.a.interfaceName,
-        aDevice.type !== "router"
+        deviceCapabilities(aDevice.type).defaultAdminUp
       );
     }
     if (!bDevice.config.interfaces[input.b.interfaceName]) {
       bDevice.config.interfaces[input.b.interfaceName] = ensureInterfaceDefaults(
         input.b.interfaceName,
-        bDevice.type !== "router"
+        deviceCapabilities(bDevice.type).defaultAdminUp
       );
     }
 
@@ -340,7 +341,7 @@ export class World {
     const fromDevice = this.devices.get(fromDeviceId);
     if (!fromDevice) return { ok: false };
 
-    if (originSourceIp && fromDevice.type !== "router") return { ok: false };
+    if (originSourceIp && !deviceCapabilities(fromDevice.type).canRouteL3) return { ok: false };
 
     const targets = this.findActiveIpEndpoints(targetIp);
     if (targets.length === 0) return { ok: false };
@@ -415,7 +416,7 @@ export class World {
     const fromDevice = this.devices.get(fromDeviceId);
     if (!fromDevice) return { ok: false, hops: [] };
 
-    if (originSourceIp && fromDevice.type !== "router") return { ok: false, hops: [] };
+    if (originSourceIp && !deviceCapabilities(fromDevice.type).canRouteL3) return { ok: false, hops: [] };
 
     const targets = this.findActiveIpEndpoints(targetIp);
     if (targets.length === 0) return { ok: false, hops: [] };
@@ -574,7 +575,7 @@ export class World {
         queue.push(n);
       }
 
-      if (curDevice.type === "switch") {
+      if (deviceCapabilities(curDevice.type).canBridgeL2) {
         for (const iface of Object.values(curDevice.config.interfaces)) {
           if (!iface.adminUp) continue;
           const next: LinkEndpoint = { deviceId: curDevice.id, interfaceName: iface.name };

@@ -216,7 +216,11 @@ wss.on("connection", (ws: WebSocket) => {
       }
       const upper = deviceId.toUpperCase();
       let type: DeviceType = "router";
-      if (upper.startsWith("SW")) type = "switch";
+      if (upper.startsWith("L3SW")) type = "l3switch";
+      else if (upper.startsWith("SW")) type = "switch";
+      else if (upper.startsWith("FW")) type = "firewall";
+      else if (upper.startsWith("SRV")) type = "server";
+      else if (upper.startsWith("CLOUD")) type = "cloud";
       else if (upper.startsWith("H")) type = "host";
       const device = world.createDevice({ id: deviceId, type });
       session = new CliSession(device, world);
