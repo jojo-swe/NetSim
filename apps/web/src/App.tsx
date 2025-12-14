@@ -26,6 +26,8 @@ type DeviceNodeData = {
   deviceId: string;
 };
 
+type DeviceType = "router" | "switch" | "host" | "l3switch" | "firewall" | "server" | "cloud";
+
 type LabDefinition = {
   id: string;
   title: string;
@@ -69,6 +71,10 @@ export default function App() {
   const apiOrigin = useMemo(() => getApiOrigin(), []);
   const routerCounterRef = useRef<number>(1);
   const switchCounterRef = useRef<number>(1);
+  const l3switchCounterRef = useRef<number>(1);
+  const firewallCounterRef = useRef<number>(1);
+  const serverCounterRef = useRef<number>(1);
+  const cloudCounterRef = useRef<number>(1);
   const hostCounterRef = useRef<number>(1);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<DeviceNodeData>(initialNodes);
@@ -167,7 +173,7 @@ export default function App() {
 
   // Device Creation
   const createDevice = useCallback(
-    async (deviceId: string, type: "router" | "switch" | "host") => {
+    async (deviceId: string, type: DeviceType) => {
       try {
         await fetch(`${apiOrigin}/api/devices`, {
           method: "POST",
@@ -199,6 +205,54 @@ export default function App() {
       type: "device",
       position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
       data: { label: `Switch ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
+  const addL3Switch = useCallback(() => {
+    const deviceId = `L3SW${l3switchCounterRef.current++}`;
+    void createDevice(deviceId, "l3switch");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `L3 Switch ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
+  const addFirewall = useCallback(() => {
+    const deviceId = `FW${firewallCounterRef.current++}`;
+    void createDevice(deviceId, "firewall");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `Firewall ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
+  const addServer = useCallback(() => {
+    const deviceId = `SRV${serverCounterRef.current++}`;
+    void createDevice(deviceId, "server");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `Server ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
+  const addCloud = useCallback(() => {
+    const deviceId = `CLOUD${cloudCounterRef.current++}`;
+    void createDevice(deviceId, "cloud");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `Cloud ${deviceId}`, deviceId }
     };
     setNodes((prev) => [...prev, node]);
   }, [createDevice, setNodes]);
@@ -238,6 +292,10 @@ export default function App() {
   const resetLab = useCallback(async () => {
     routerCounterRef.current = 1;
     switchCounterRef.current = 1;
+    l3switchCounterRef.current = 1;
+    firewallCounterRef.current = 1;
+    serverCounterRef.current = 1;
+    cloudCounterRef.current = 1;
     hostCounterRef.current = 1;
     setSelectedDeviceId(null);
     setValidation(null);
@@ -287,6 +345,10 @@ export default function App() {
         const ids = loadedNodes.map((n) => n.id);
         routerCounterRef.current = nextCounterFromIds(ids, /^R(\d+)$/);
         switchCounterRef.current = nextCounterFromIds(ids, /^SW(\d+)$/);
+        l3switchCounterRef.current = nextCounterFromIds(ids, /^L3SW(\d+)$/);
+        firewallCounterRef.current = nextCounterFromIds(ids, /^FW(\d+)$/);
+        serverCounterRef.current = nextCounterFromIds(ids, /^SRV(\d+)$/);
+        cloudCounterRef.current = nextCounterFromIds(ids, /^CLOUD(\d+)$/);
         hostCounterRef.current = nextCounterFromIds(ids, /^H(\d+)$/);
 
         // Reset backend first
@@ -295,10 +357,25 @@ export default function App() {
         // Re-create devices in backend
         for (const n of loadedNodes) {
           const label = (n as any)?.data?.label as string | undefined;
-          const isSwitch = n.id.toUpperCase().startsWith("SW") || Boolean(label?.toLowerCase().includes("switch"));
-          const isHost = n.id.toUpperCase().startsWith("H") || Boolean(label?.toLowerCase().includes("host"));
-          // Also check type if previously saved with 'device' type
-          await createDevice(n.id, isHost ? "host" : isSwitch ? "switch" : "router");
+          const upperId = n.id.toUpperCase();
+          const lowerLabel = label?.toLowerCase() ?? "";
+
+          let type: DeviceType = "router";
+          if (upperId.startsWith("L3SW") || (lowerLabel.includes("l3") && lowerLabel.includes("switch"))) {
+            type = "l3switch";
+          } else if (upperId.startsWith("SW") || lowerLabel.includes("switch")) {
+            type = "switch";
+          } else if (upperId.startsWith("FW") || lowerLabel.includes("firewall")) {
+            type = "firewall";
+          } else if (upperId.startsWith("SRV") || lowerLabel.includes("server")) {
+            type = "server";
+          } else if (upperId.startsWith("CLOUD") || lowerLabel.includes("cloud") || lowerLabel.includes("internet")) {
+            type = "cloud";
+          } else if (upperId.startsWith("H") || lowerLabel.includes("host")) {
+            type = "host";
+          }
+
+          await createDevice(n.id, type);
         }
 
         // Snapshot restore if available
@@ -386,6 +463,10 @@ export default function App() {
         <DevicePalette 
             onAddRouter={addRouter} 
             onAddSwitch={addSwitch} 
+            onAddL3Switch={addL3Switch}
+            onAddFirewall={addFirewall}
+            onAddServer={addServer}
+            onAddCloud={addCloud}
             onAddHost={addHost}
         />
         
