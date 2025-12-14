@@ -145,6 +145,11 @@ export class LinuxSession {
     const cmd = (parts[0] ?? "").toLowerCase();
     const args = parts.slice(1);
 
+    if (cmd === "clear") {
+      // ANSI clear screen + home cursor
+      return { output: "\u001b[2J\u001b[H", prompt: this.getPrompt() };
+    }
+
     if (cmd === "exit" || cmd === "logout" || cmd === "quit") {
       return { output: "logout\n", prompt: "" };
     }
@@ -155,12 +160,15 @@ export class LinuxSession {
           [
             "Available commands:",
             "  help",
+            "  clear",
             "  hostname [name]",
             "  ip addr|a [add <ip>/<prefix> dev <iface>]",
             "  ip link [set dev <iface> up|down]",
-            "  ip route|r [add default via <gw> | del default]",
+            "  ip route|r [add <dst>/<prefix> via <gw> | del <dst>/<prefix> via <gw> | add default via <gw> | del default]",
+            "  ip neigh",
+            "  route -n",
             "  arp [-n]",
-            "  ping <ip>",
+            "  ping [-c <count>] <ip>",
             "  traceroute <ip>",
             "  exit"
           ].join("\n") + "\n",
@@ -186,10 +194,18 @@ export class LinuxSession {
       return { output: this.showArp(), prompt: this.getPrompt() };
     }
 
+    if (cmd === "route") {
+      const a0 = (args[0] ?? "").toLowerCase();
+      if (a0 === "-n") {
+        return { output: this.showRouteN(), prompt: this.getPrompt() };
+      }
+      return { output: "route: unsupported options\n", prompt: this.getPrompt() };
+    }
+
     if (cmd === "ping") {
-      const target = args.join(" ").trim();
-      if (!target) return { output: "ping: missing operand\n", prompt: this.getPrompt() };
-      return { output: this.ping(target), prompt: this.getPrompt() };
+      const parsed = this.parsePingArgs(args);
+      if (!parsed.target) return { output: "ping: missing operand\n", prompt: this.getPrompt() };
+      return { output: this.ping(parsed.target, parsed.count), prompt: this.getPrompt() };
     }
 
     if (cmd === "traceroute" || cmd === "trace") {
@@ -234,6 +250,10 @@ export class LinuxSession {
         return { output: this.showIpRoute(), prompt: this.getPrompt() };
       }
 
+      if (sub === "neigh" || sub === "neighbor" || sub === "neighbour") {
+        return { output: this.showIpNeigh(), prompt: this.getPrompt() };
+      }
+
       return { output: "ip: unknown object\n", prompt: this.getPrompt() };
     }
 
@@ -243,11 +263,11 @@ export class LinuxSession {
   private completionCandidates(tokens: string[]): string[] {
     const t = tokens.map((x) => x.toLowerCase());
     if (t.length === 0) {
-      return ["help", "hostname", "ip", "ifconfig", "arp", "ping", "traceroute", "exit"];
+      return ["help", "clear", "hostname", "ip", "ifconfig", "arp", "route", "ping", "traceroute", "exit"];
     }
 
     if (t.length === 1 && t[0] === "ip") {
-      return ["addr", "a", "link", "route", "r"];
+      return ["addr", "a", "link", "route", "r", "neigh"];
     }
 
     if (t.length === 2 && t[0] === "ip" && (t[1] === "addr" || t[1] === "a")) {
@@ -268,6 +288,10 @@ export class LinuxSession {
 
     if (t.length === 2 && t[0] === "ip" && (t[1] === "route" || t[1] === "r")) {
       return ["add", "del", "show"];
+    }
+
+    if (t.length === 1 && t[0] === "route") {
+      return ["-n"];
     }
 
     return [];
@@ -371,20 +395,70 @@ export class LinuxSession {
 
   private ipRouteAdd(args: string[]): boolean {
     // ip route add default via 10.0.0.1
-    const dest = (args[0] ?? "").toLowerCase();
-    if (dest !== "default") return false;
+    // ip route add 10.0.2.0/24 via 10.0.0.1
+    const destRaw = (args[0] ?? "").trim();
+    const destLower = destRaw.toLowerCase();
+
+    if (destLower === "default") {
+      if ((args[1] ?? "").toLowerCase() !== "via") return false;
+      const gw = args[2];
+      if (!gw || ipv4ToInt(gw) === null) return false;
+      this.device.config.defaultGateway = gw;
+      return true;
+    }
+
+    const [dstIp, prefixRaw] = destRaw.split("/");
+    if (!dstIp || ipv4ToInt(dstIp) === null) return false;
+    const prefixLen = prefixRaw ? Number(prefixRaw) : NaN;
+    if (!Number.isInteger(prefixLen)) return false;
+    const mask = prefixLenToMask(prefixLen);
+    if (!mask) return false;
+
     if ((args[1] ?? "").toLowerCase() !== "via") return false;
     const gw = args[2];
     if (!gw || ipv4ToInt(gw) === null) return false;
-    this.device.config.defaultGateway = gw;
+
+    if (!Array.isArray((this.device.config as any).staticRoutes)) {
+      (this.device.config as any).staticRoutes = [];
+    }
+
+    const exists = this.device.config.staticRoutes.some(
+      (r) => r.destination === dstIp && r.mask === mask && r.nextHop === gw
+    );
+    if (!exists) this.device.config.staticRoutes.push({ destination: dstIp, mask, nextHop: gw });
+
     return true;
   }
 
   private ipRouteDel(args: string[]): boolean {
     // ip route del default
-    const dest = (args[0] ?? "").toLowerCase();
-    if (dest !== "default") return false;
-    this.device.config.defaultGateway = undefined;
+    // ip route del 10.0.2.0/24 via 10.0.0.1
+    const destRaw = (args[0] ?? "").trim();
+    const destLower = destRaw.toLowerCase();
+
+    if (destLower === "default") {
+      this.device.config.defaultGateway = undefined;
+      return true;
+    }
+
+    const [dstIp, prefixRaw] = destRaw.split("/");
+    if (!dstIp || ipv4ToInt(dstIp) === null) return false;
+    const prefixLen = prefixRaw ? Number(prefixRaw) : NaN;
+    if (!Number.isInteger(prefixLen)) return false;
+    const mask = prefixLenToMask(prefixLen);
+    if (!mask) return false;
+
+    if ((args[1] ?? "").toLowerCase() !== "via") return false;
+    const gw = args[2];
+    if (!gw || ipv4ToInt(gw) === null) return false;
+
+    if (!Array.isArray((this.device.config as any).staticRoutes)) {
+      (this.device.config as any).staticRoutes = [];
+    }
+
+    this.device.config.staticRoutes = this.device.config.staticRoutes.filter(
+      (r) => !(r.destination === dstIp && r.mask === mask && r.nextHop === gw)
+    );
     return true;
   }
 
@@ -405,10 +479,66 @@ export class LinuxSession {
     return header + rows + "\n";
   }
 
-  private ping(target: string): string {
+  private showIpNeigh(): string {
+    // Very lightweight neighbor table view based on the sim ARP table.
+    const entries = this.world?.getArpTable(this.device.id) ?? [];
+    if (entries.length === 0) return "\n";
+    return (
+      entries
+        .map((e) => `${e.ip} dev ${linuxIfName(e.interfaceName)} lladdr ${e.mac} REACHABLE`)
+        .join("\n") + "\n"
+    );
+  }
+
+  private showRouteN(): string {
+    const lines: string[] = [];
+    lines.push("Kernel IP routing table");
+    lines.push("Destination     Gateway         Genmask         Flags Iface");
+
+    const addRow = (dst: string, gw: string, mask: string, flags: string, iface: string) => {
+      const a = dst.padEnd(15, " ");
+      const b = gw.padEnd(15, " ");
+      const c = mask.padEnd(15, " ");
+      lines.push(`${a} ${b} ${c} ${flags.padEnd(5, " ")} ${iface}`);
+    };
+
+    if (this.device.config.defaultGateway) {
+      addRow("0.0.0.0", this.device.config.defaultGateway, "0.0.0.0", "UG", "eth0");
+    }
+
+    const staticRoutes = Array.isArray((this.device.config as any).staticRoutes) ? this.device.config.staticRoutes : [];
+    for (const r of staticRoutes) {
+      addRow(r.destination, r.nextHop, r.mask, "UG", "eth0");
+    }
+
+    return lines.join("\n") + "\n";
+  }
+
+  private parsePingArgs(args: string[]): { target: string; count: number } {
+    let count = 4;
+    let i = 0;
+    while (i < args.length) {
+      const a = args[i] ?? "";
+      if (a === "-c") {
+        const nRaw = args[i + 1];
+        const n = Number(nRaw);
+        if (Number.isInteger(n) && n > 0 && n <= 20) {
+          count = n;
+        }
+        i += 2;
+        continue;
+      }
+      break;
+    }
+
+    const target = (args[i] ?? "").trim();
+    return { target, count };
+  }
+
+  private ping(target: string, count = 4): string {
     const ok = this.world?.canPing(this.device.id, target) ?? false;
-    const transmitted = 4;
-    const received = ok ? 4 : 0;
+    const transmitted = count;
+    const received = ok ? count : 0;
     const loss = ok ? 0 : 100;
 
     const lines: string[] = [];

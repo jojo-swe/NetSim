@@ -161,6 +161,8 @@ export default function App() {
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState(initialEdges);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [showPortsPanel, setShowPortsPanel] = useState<boolean>(true);
+  const [portsPanelSide, setPortsPanelSide] = useState<"front" | "back">("back");
+  const [armedPort, setArmedPort] = useState<null | { deviceId: string; interfaceName: string }>(null);
   const [devicesById, setDevicesById] = useState<Record<string, any>>({});
 
   const [linkWizard, setLinkWizard] = useState<null | {
@@ -202,6 +204,13 @@ export default function App() {
     if (selectedDeviceId) setShowPortsPanel(true);
   }, [selectedDeviceId]);
 
+  useEffect(() => {
+    // If the selection changes, any "armed" port should be cleared to avoid accidental links.
+    if (armedPort && selectedDeviceId !== armedPort.deviceId) {
+      setArmedPort(null);
+    }
+  }, [armedPort, selectedDeviceId]);
+
   const refreshDevices = useCallback(async () => {
     try {
       const resp = await fetch(`${apiOrigin}/api/devices`);
@@ -227,6 +236,17 @@ export default function App() {
     if (type === "firewall") return false;
     return true;
   }, []);
+
+  const setInterfaceAdminUp = useCallback(
+    async (deviceId: string, interfaceName: string, adminUp: boolean) => {
+      await fetch(`${apiOrigin}/api/devices/${encodeURIComponent(deviceId)}/interface`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interfaceName, adminUp })
+      });
+    },
+    [apiOrigin]
+  );
 
   useEffect(() => {
     try {
@@ -404,19 +424,22 @@ export default function App() {
       const connected = Boolean(link);
       const operUp = connected && adminUp && (peerAdminUp === null ? true : peerAdminUp);
 
+      const isArmed = Boolean(armedPort && armedPort.deviceId === selectedDeviceId && armedPort.interfaceName === p.name);
+
       return {
         name: p.name,
         kind: p.kind,
         connected,
         adminUp,
         operUp,
+        isArmed,
         peer: link ? `${link.peerDeviceId} ${link.peerInterfaceName}` : "",
         cableType: link?.cableType
       };
     });
 
     return { selectedType, items };
-  }, [defaultAdminUpFor, devicesById, findPortLinkInfo, inferDeviceType, selectedDeviceId, showPortsPanel]);
+  }, [armedPort, defaultAdminUpFor, devicesById, findPortLinkInfo, inferDeviceType, selectedDeviceId, showPortsPanel]);
 
   const availablePorts = useCallback(
     (deviceId: string): DevicePort[] => {
@@ -862,7 +885,41 @@ export default function App() {
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
           nodeTypes={nodeTypes}
-          onNodeClick={(_, node) => setSelectedDeviceId(node.id)}
+          onNodeClick={(_, node) => {
+            const clickedId = node.id;
+
+            if (armedPort) {
+              // If a port is armed, clicking another device starts a prefilled link wizard.
+              if (clickedId !== armedPort.deviceId) {
+                const sourceId = armedPort.deviceId;
+                const targetId = clickedId;
+
+                const targetIf = firstFreePort(targetId) ?? "";
+                const sourceIf = armedPort.interfaceName;
+                const errors: string[] = [];
+                if (!sourceIf) errors.push(`${sourceId} has no free ports`);
+                if (!targetIf) errors.push(`${targetId} has no free ports`);
+
+                const cableType = sourceIf && targetIf ? suggestCableType(sourceId, sourceIf, targetId, targetIf) : "auto";
+
+                setLinkWizard({
+                  sourceId,
+                  targetId,
+                  sourceIf,
+                  targetIf,
+                  cableType,
+                  cableTypeLocked: false,
+                  ...(errors.length > 0 ? { error: errors.join(". ") } : {})
+                });
+              }
+
+              setArmedPort(null);
+              setSelectedDeviceId(clickedId);
+              return;
+            }
+
+            setSelectedDeviceId(clickedId);
+          }}
           fitView
           className="react-flow-dark"
         >
@@ -948,6 +1005,14 @@ export default function App() {
                 <button
                   className="btn-icon"
                   style={{ padding: 6 }}
+                  onClick={() => setPortsPanelSide((s) => (s === "back" ? "front" : "back"))}
+                  title={portsPanelSide === "back" ? "Show summary" : "Show ports"}
+                >
+                  {portsPanelSide === "back" ? "⇄" : "⇄"}
+                </button>
+                <button
+                  className="btn-icon"
+                  style={{ padding: 6 }}
                   onClick={() => void refreshDevices()}
                   title="Refresh"
                 >
@@ -964,51 +1029,127 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gap: 8 }}>
-              {portsPanelUi.items.map((p) => {
-                const status = !p.connected ? "unused" : p.operUp ? "up" : "down";
-                const statusColor =
-                  status === "up" ? "rgba(34, 197, 94, 0.95)" : status === "down" ? "rgba(251, 146, 60, 0.95)" : "rgba(148, 163, 184, 0.9)";
+            {portsPanelSide === "front" ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div
+                  style={{
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid rgba(148, 163, 184, 0.14)",
+                    background: "rgba(15, 23, 42, 0.35)",
+                    display: "grid",
+                    gap: 8
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Quick actions</div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <button
+                      className="btn-icon"
+                      style={{ justifyContent: "flex-start", gap: 8, padding: 10 }}
+                      onClick={() => setPortsPanelSide("back")}
+                      title="Show ports"
+                    >
+                      Show ports
+                    </button>
+                    {armedPort ? (
+                      <button
+                        className="btn-icon"
+                        style={{ justifyContent: "flex-start", gap: 8, padding: 10, borderColor: "rgba(251, 146, 60, 0.35)" }}
+                        onClick={() => setArmedPort(null)}
+                        title="Cancel link mode"
+                      >
+                        Cancel link mode ({armedPort.deviceId} {armedPort.interfaceName})
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
 
-                return (
-                  <div
-                    key={p.name}
-                    style={{
-                      padding: 10,
-                      borderRadius: 10,
-                      border: "1px solid rgba(148, 163, 184, 0.14)",
-                      background: "rgba(15, 23, 42, 0.35)",
-                      display: "grid",
-                      gap: 6
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{p.name}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.kind.toUpperCase()}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: 99, background: statusColor }} />
-                          <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{status.toUpperCase()}</div>
+                <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                  Tip: click a port on the back side to arm it, then click another device.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {portsPanelUi.items.map((p) => {
+                  const sid = selectedDeviceId;
+                  if (!sid) return null;
+
+                  const status = !p.connected ? "unused" : p.operUp ? "up" : "down";
+                  const statusColor =
+                    status === "up"
+                      ? "rgba(34, 197, 94, 0.95)"
+                      : status === "down"
+                        ? "rgba(251, 146, 60, 0.95)"
+                        : "rgba(148, 163, 184, 0.9)";
+
+                  const borderColor = p.isArmed ? "rgba(251, 146, 60, 0.45)" : "rgba(148, 163, 184, 0.14)";
+                  const bg = p.isArmed ? "rgba(251, 146, 60, 0.08)" : "rgba(15, 23, 42, 0.35)";
+
+                  return (
+                    <div
+                      key={p.name}
+                      style={{
+                        padding: 10,
+                        borderRadius: 10,
+                        border: `1px solid ${borderColor}`,
+                        background: bg,
+                        display: "grid",
+                        gap: 6,
+                        cursor: p.connected ? "default" : "pointer"
+                      }}
+                      onClick={() => {
+                        if (p.connected) return;
+                        setArmedPort((prev) => {
+                          if (prev && prev.deviceId === sid && prev.interfaceName === p.name) return null;
+                          return { deviceId: sid, interfaceName: p.name };
+                        });
+                      }}
+                      title={p.connected ? undefined : "Click to start link from this port"}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>{p.name}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.kind.toUpperCase()}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: 99, background: statusColor }} />
+                            <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{status.toUpperCase()}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {p.connected ? (
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                        {p.peer}
-                        {p.cableType ? ` ${cableTypeSuffix(p.cableType)}` : ""}
+                      {p.connected ? (
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          {p.peer}
+                          {p.cableType ? ` ${cableTypeSuffix(p.cableType)}` : ""}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.isArmed ? "Link mode: click a target device" : "Not connected"}</div>
+                      )}
+
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>Admin: {p.adminUp ? "up" : "down"}</div>
+
+                        <button
+                          className="btn-icon"
+                          style={{ padding: "4px 8px" }}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void (async () => {
+                              await setInterfaceAdminUp(sid, p.name, !p.adminUp).catch(() => {});
+                              await refreshDevices();
+                            })();
+                          }}
+                          title={p.adminUp ? "Shutdown" : "No shutdown"}
+                        >
+                          {p.adminUp ? "down" : "up"}
+                        </button>
                       </div>
-                    ) : (
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Not connected</div>
-                    )}
-
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>
-                      Admin: {p.adminUp ? "up" : "down"}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : null}
 

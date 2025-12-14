@@ -54,6 +54,48 @@ app.post("/api/devices", (req: Request, res: Response) => {
   res.status(201).json({ device });
 });
 
+app.post("/api/devices/:deviceId/interface", (req: Request, res: Response) => {
+  const deviceId = typeof req.params.deviceId === "string" ? req.params.deviceId : "";
+  const body = req.body as {
+    interfaceName?: string;
+    adminUp?: boolean;
+    ipv4Address?: string | null;
+    ipv4Mask?: string | null;
+  };
+
+  const interfaceName = typeof body?.interfaceName === "string" ? body.interfaceName.trim() : "";
+  if (!deviceId || !interfaceName) {
+    res.status(400).json({ error: "Invalid device or interface" });
+    return;
+  }
+
+  const device = world.getDevice(deviceId) ?? world.createDevice({ id: deviceId });
+  const iface = device.config.interfaces[interfaceName] ?? { name: interfaceName, adminUp: false };
+  device.config.interfaces[interfaceName] = iface;
+
+  if (typeof body.adminUp === "boolean") iface.adminUp = body.adminUp;
+
+  if (Object.prototype.hasOwnProperty.call(body, "ipv4Address")) {
+    const v = body.ipv4Address;
+    if (v === null || v === undefined || String(v).trim() === "") {
+      delete iface.ipv4Address;
+    } else {
+      iface.ipv4Address = String(v).trim();
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, "ipv4Mask")) {
+    const v = body.ipv4Mask;
+    if (v === null || v === undefined || String(v).trim() === "") {
+      delete iface.ipv4Mask;
+    } else {
+      iface.ipv4Mask = String(v).trim();
+    }
+  }
+
+  res.json({ ok: true, device });
+});
+
 app.post("/api/world/reset", (_req: Request, res: Response) => {
   world.reset();
   res.json({ ok: true });
