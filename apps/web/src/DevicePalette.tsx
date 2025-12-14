@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Router, Box, Server, Shield, Cloud, Layers2, Monitor } from "lucide-react";
+import { Router, Box, Server, Shield, Cloud, Layers2, Monitor, Laptop } from "lucide-react";
 
 type Props = {
   onAddRouter: () => void;
@@ -8,6 +8,7 @@ type Props = {
   onAddFirewall: () => void;
   onAddServer: () => void;
   onAddCloud: () => void;
+  onAddPc: () => void;
   onAddHost: () => void;
 };
 
@@ -18,6 +19,7 @@ export function DevicePalette({
   onAddFirewall,
   onAddServer,
   onAddCloud,
+  onAddPc,
   onAddHost
 }: Props) {
   return (
@@ -80,6 +82,13 @@ export function DevicePalette({
           <Cloud size={24} color="#60A5FA" />
         </button>
         <span className="tooltip">Add Cloud</span>
+      </div>
+
+      <div className="tooltip-container" style={{ position: "relative" }}>
+        <button className="device-btn" onClick={onAddPc}>
+          <Laptop size={24} color="#F472B6" />
+        </button>
+        <span className="tooltip">Add PC</span>
       </div>
 
       <div className="tooltip-container" style={{ position: "relative" }}>

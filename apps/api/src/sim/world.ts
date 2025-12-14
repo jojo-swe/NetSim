@@ -198,7 +198,7 @@ export class World {
     }
 
     const caps = deviceCapabilities(type);
-    const hostname = input.hostname ?? caps.defaultHostname;
+    const hostname = input.hostname ?? (type === "pc" ? id : caps.defaultHostname);
     const defaultAdminUp = caps.defaultAdminUp;
 
     const device: Device = {

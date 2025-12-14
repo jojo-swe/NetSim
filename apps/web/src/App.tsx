@@ -26,7 +26,7 @@ type DeviceNodeData = {
   deviceId: string;
 };
 
-type DeviceType = "router" | "switch" | "host" | "l3switch" | "firewall" | "server" | "cloud";
+type DeviceType = "router" | "switch" | "host" | "pc" | "l3switch" | "firewall" | "server" | "cloud";
 
 type PortKind = "rj45" | "sfp";
 
@@ -58,6 +58,8 @@ function devicePorts(type: DeviceType): DevicePort[] {
     case "server":
       return [...rangePorts("GigabitEthernet0/", 0, 2, "rj45")];
     case "host":
+      return [...rangePorts("GigabitEthernet0/", 0, 1, "rj45")];
+    case "pc":
       return [...rangePorts("GigabitEthernet0/", 0, 1, "rj45")];
     case "cloud":
       return [...rangePorts("GigabitEthernet0/", 0, 8, "rj45"), ...rangePorts("GigabitEthernet0/", 8, 2, "sfp")];
@@ -152,6 +154,7 @@ export default function App() {
   const firewallCounterRef = useRef<number>(1);
   const serverCounterRef = useRef<number>(1);
   const cloudCounterRef = useRef<number>(1);
+  const pcCounterRef = useRef<number>(1);
   const hostCounterRef = useRef<number>(1);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<DeviceNodeData>(initialNodes);
@@ -264,6 +267,7 @@ export default function App() {
       if (upperId.startsWith("FW") || lowerLabel.includes("firewall")) return "firewall";
       if (upperId.startsWith("SRV") || lowerLabel.includes("server")) return "server";
       if (upperId.startsWith("CLOUD") || lowerLabel.includes("cloud") || lowerLabel.includes("internet")) return "cloud";
+      if (upperId.startsWith("PC") || lowerLabel.includes("pc") || lowerLabel.includes("linux")) return "pc";
       if (upperId.startsWith("H") || lowerLabel.includes("host")) return "host";
       return "router";
     },
@@ -547,6 +551,18 @@ export default function App() {
     setNodes((prev) => [...prev, node]);
   }, [createDevice, setNodes]);
 
+  const addPc = useCallback(() => {
+    const deviceId = `PC${pcCounterRef.current++}`;
+    void createDevice(deviceId, "pc");
+    const node: Node<DeviceNodeData> = {
+      id: deviceId,
+      type: "device",
+      position: { x: 100 + Math.random() * 300, y: 100 + Math.random() * 200 },
+      data: { label: `PC ${deviceId}`, deviceId }
+    };
+    setNodes((prev) => [...prev, node]);
+  }, [createDevice, setNodes]);
+
   const addHost = useCallback(() => {
     const deviceId = `H${hostCounterRef.current++}`;
     void createDevice(deviceId, "host");
@@ -586,6 +602,7 @@ export default function App() {
     firewallCounterRef.current = 1;
     serverCounterRef.current = 1;
     cloudCounterRef.current = 1;
+    pcCounterRef.current = 1;
     hostCounterRef.current = 1;
     setSelectedDeviceId(null);
     setValidation(null);
@@ -639,6 +656,7 @@ export default function App() {
         firewallCounterRef.current = nextCounterFromIds(ids, /^FW(\d+)$/);
         serverCounterRef.current = nextCounterFromIds(ids, /^SRV(\d+)$/);
         cloudCounterRef.current = nextCounterFromIds(ids, /^CLOUD(\d+)$/);
+        pcCounterRef.current = nextCounterFromIds(ids, /^PC(\d+)$/);
         hostCounterRef.current = nextCounterFromIds(ids, /^H(\d+)$/);
 
         // Reset backend first
@@ -661,6 +679,8 @@ export default function App() {
             type = "server";
           } else if (upperId.startsWith("CLOUD") || lowerLabel.includes("cloud") || lowerLabel.includes("internet")) {
             type = "cloud";
+          } else if (upperId.startsWith("PC") || lowerLabel.includes("pc") || lowerLabel.includes("linux")) {
+            type = "pc";
           } else if (upperId.startsWith("H") || lowerLabel.includes("host")) {
             type = "host";
           }
@@ -767,6 +787,7 @@ export default function App() {
             onAddFirewall={addFirewall}
             onAddServer={addServer}
             onAddCloud={addCloud}
+            onAddPc={addPc}
             onAddHost={addHost}
         />
         

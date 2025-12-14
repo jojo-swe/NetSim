@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { Handle, NodeProps, Position } from "reactflow";
-import { Router, Box, Server, Cloud, Shield, Layers2, Monitor } from "lucide-react";
+import { Router, Box, Server, Cloud, Shield, Layers2, Monitor, Laptop } from "lucide-react";
 
 /**
  * Modern "Linear" style Device Node
@@ -19,6 +19,7 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
   const isFirewall = label.includes("firewall") || upperId.startsWith("FW");
   const isServer = label.includes("server") || upperId.startsWith("SRV");
   const isCloud = label.includes("cloud") || label.includes("internet") || upperId.startsWith("CLOUD");
+  const isPc = label.includes("pc") || label.includes("linux") || upperId.startsWith("PC");
   const isHost = label.includes("host") || upperId.startsWith("H");
 
   // Icon Selection
@@ -29,6 +30,7 @@ const DeviceNode = ({ data, selected }: NodeProps) => {
   else if (isFirewall) Icon = Shield;
   else if (isCloud) Icon = Cloud;
   else if (isServer) Icon = Server;
+  else if (isPc) Icon = Laptop;
   else if (isHost) Icon = Monitor;
   // actually let's use a specific look for switch if possible or just generic. 
   // Lucide doesn't have a perfect "Switch" icon, so we use Box or maybe something else.

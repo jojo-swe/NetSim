@@ -4,6 +4,7 @@ import express, { type Request, type Response } from "express";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { CliSession } from "./cli/cliSession.js";
+import { LinuxSession } from "./cli/linuxSession.js";
 import { createNdjsonRpcServer } from "./rpc/ndjsonRpcServer.js";
 import { labs, validateLab } from "./labs/index.js";
 import type { CableType, DeviceType, Link } from "./sim/types.js";
@@ -133,8 +134,14 @@ const rpcServer = createNdjsonRpcServer(world);
 
 const wss = new WebSocketServer({ server, path: "/ws/cli" });
 
+type TerminalSession = {
+  getPrompt(): string;
+  executeLine(line: string): { output: string; prompt: string };
+  complete(line: string): { insert: string; candidates: string[]; prompt: string };
+};
+
 wss.on("connection", (ws: WebSocket) => {
-  let session: CliSession | undefined;
+  let session: TerminalSession | undefined;
   let rawLineBuf = "";
   let inputMode: "json" | "raw" = "json";
 
@@ -230,9 +237,10 @@ wss.on("connection", (ws: WebSocket) => {
       else if (upper.startsWith("FW")) type = "firewall";
       else if (upper.startsWith("SRV")) type = "server";
       else if (upper.startsWith("CLOUD")) type = "cloud";
+      else if (upper.startsWith("PC")) type = "pc";
       else if (upper.startsWith("H")) type = "host";
       const device = world.createDevice({ id: deviceId, type });
-      session = new CliSession(device, world);
+      session = device.type === "pc" ? new LinuxSession(device, world) : new CliSession(device, world);
       sendOutput(`\n${session.getPrompt()}`);
       return;
     }
