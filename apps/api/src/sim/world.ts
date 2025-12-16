@@ -336,6 +336,33 @@ export class World {
       });
   }
 
+  deleteArpEntry(deviceId: string, ip: string): boolean {
+    if (ipv4ToInt(ip) === null) return false;
+    const table = this.arpTables.get(deviceId);
+    if (!table) return false;
+    return table.delete(ip);
+  }
+
+  flushArpTable(deviceId: string, interfaceName?: string): number {
+    const table = this.arpTables.get(deviceId);
+    if (!table) return 0;
+
+    if (!interfaceName) {
+      const count = table.size;
+      table.clear();
+      return count;
+    }
+
+    let removed = 0;
+    for (const [ip, entry] of table.entries()) {
+      if (entry.interfaceName === interfaceName) {
+        table.delete(ip);
+        removed++;
+      }
+    }
+    return removed;
+  }
+
   private findActiveIpEndpoints(ip: string): Array<{ ep: LinkEndpoint; mask: string }> {
     const out: Array<{ ep: LinkEndpoint; mask: string }> = [];
     for (const device of this.devices.values()) {

@@ -66,6 +66,54 @@ function devicePorts(type: DeviceType): DevicePort[] {
   }
 }
 
+function ipv4ToInt(ip: string): number | null {
+  const parts = ip.trim().split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const part of parts) {
+    const v = Number(part);
+    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
+    n = (n << 8) | v;
+  }
+  return n >>> 0;
+}
+
+function prefixLenToMask(prefixLen: number): string | null {
+  if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 32) return null;
+  const m = prefixLen === 0 ? 0 : ((0xffffffff << (32 - prefixLen)) >>> 0);
+  const parts = [(m >>> 24) & 255, (m >>> 16) & 255, (m >>> 8) & 255, m & 255];
+  return parts.join(".");
+}
+
+function maskToPrefixLen(mask: string): number | null {
+  const m = ipv4ToInt(mask);
+  if (m === null) return null;
+  let seenZero = false;
+  let len = 0;
+  for (let i = 31; i >= 0; i--) {
+    const bit = (m >>> i) & 1;
+    if (bit === 1) {
+      if (seenZero) return null;
+      len++;
+    } else {
+      seenZero = true;
+    }
+  }
+  return len;
+}
+
+function maskOrPrefixToMask(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  const s = raw.startsWith("/") ? raw.slice(1) : raw;
+  if (s.includes(".")) {
+    return ipv4ToInt(s) === null ? null : s;
+  }
+  const n = Number(s);
+  if (!Number.isInteger(n)) return null;
+  return prefixLenToMask(n);
+}
+
 function deviceIsMdix(type: DeviceType): boolean {
   return type === "switch" || type === "l3switch";
 }
@@ -164,6 +212,18 @@ export default function App() {
   const [portsPanelSide, setPortsPanelSide] = useState<"front" | "back">("back");
   const [armedPort, setArmedPort] = useState<null | { deviceId: string; interfaceName: string }>(null);
   const [devicesById, setDevicesById] = useState<Record<string, any>>({});
+  const [interfaceAdminBusy, setInterfaceAdminBusy] = useState<Record<string, boolean>>({});
+  const [interfaceAdminError, setInterfaceAdminError] = useState<Record<string, string>>({});
+  const [linkDeleteBusy, setLinkDeleteBusy] = useState<Record<string, boolean>>({});
+  const [linkDeleteError, setLinkDeleteError] = useState<Record<string, string>>({});
+  const [interfaceIpBusy, setInterfaceIpBusy] = useState<Record<string, boolean>>({});
+  const [interfaceIpError, setInterfaceIpError] = useState<Record<string, string>>({});
+  const [ipEditor, setIpEditor] = useState<null | {
+    deviceId: string;
+    interfaceName: string;
+    ipv4Address: string;
+    ipv4MaskOrPrefix: string;
+  }>(null);
 
   const [linkWizard, setLinkWizard] = useState<null | {
     sourceId: string;
@@ -188,6 +248,16 @@ export default function App() {
   const [showLinkLabels, setShowLinkLabels] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem("netsim.showLinkLabels");
+      if (v === null) return true;
+      return v === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  const [confirmDisconnectAll, setConfirmDisconnectAll] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem("netsim.confirmDisconnectAll");
       if (v === null) return true;
       return v === "true";
     } catch {
@@ -231,6 +301,10 @@ export default function App() {
     void refreshDevices();
   }, [refreshDevices, selectedDeviceId]);
 
+  useEffect(() => {
+    setIpEditor(null);
+  }, [selectedDeviceId]);
+
   const defaultAdminUpFor = useCallback((type: DeviceType): boolean => {
     if (type === "router") return false;
     if (type === "firewall") return false;
@@ -239,11 +313,38 @@ export default function App() {
 
   const setInterfaceAdminUp = useCallback(
     async (deviceId: string, interfaceName: string, adminUp: boolean) => {
-      await fetch(`${apiOrigin}/api/devices/${encodeURIComponent(deviceId)}/interface`, {
+      const resp = await fetch(`${apiOrigin}/api/devices/${encodeURIComponent(deviceId)}/interface`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ interfaceName, adminUp })
       });
+      if (!resp.ok) {
+        let msg = `HTTP ${resp.status}`;
+        try {
+          const text = await resp.text();
+          if (text) msg = text;
+        } catch {}
+        throw new Error(msg);
+      }
+    },
+    [apiOrigin]
+  );
+
+  const setInterfaceIpv4 = useCallback(
+    async (deviceId: string, interfaceName: string, ipv4Address: string | null, ipv4Mask: string | null) => {
+      const resp = await fetch(`${apiOrigin}/api/devices/${encodeURIComponent(deviceId)}/interface`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interfaceName, ipv4Address, ipv4Mask })
+      });
+      if (!resp.ok) {
+        let msg = `HTTP ${resp.status}`;
+        try {
+          const text = await resp.text();
+          if (text) msg = text;
+        } catch {}
+        throw new Error(msg);
+      }
     },
     [apiOrigin]
   );
@@ -259,6 +360,12 @@ export default function App() {
       localStorage.setItem("netsim.showLinkLabels", String(showLinkLabels));
     } catch {}
   }, [showLinkLabels]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("netsim.confirmDisconnectAll", String(confirmDisconnectAll));
+    } catch {}
+  }, [confirmDisconnectAll]);
 
   const toggleDeviceLabels = useCallback(() => {
     setShowDeviceLabels((v) => !v);
@@ -286,10 +393,15 @@ export default function App() {
   // Link Management
   const deleteLink = useCallback(
     async (linkId: string) => {
+      const resp = await fetch(`${apiOrigin}/api/links/${encodeURIComponent(linkId)}`, {
+        method: "DELETE"
+      });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
       try {
-        await fetch(`${apiOrigin}/api/links/${encodeURIComponent(linkId)}`, {
-          method: "DELETE"
-        });
+        const json = (await resp.json()) as { ok?: boolean };
+        if (json.ok === false) throw new Error("Failed");
       } catch {}
     },
     [apiOrigin]
@@ -299,7 +411,7 @@ export default function App() {
     (changes: EdgeChange[]) => {
       for (const change of changes) {
         if (change.type === "remove") {
-          void deleteLink(change.id);
+          void deleteLink(change.id).catch(() => {});
         }
       }
       onEdgesChangeBase(changes);
@@ -370,7 +482,7 @@ export default function App() {
     (
       deviceId: string,
       interfaceName: string
-    ): { peerDeviceId: string; peerInterfaceName: string; cableType?: string } | null => {
+    ): { linkId: string; peerDeviceId: string; peerInterfaceName: string; cableType?: string } | null => {
       if (!interfaceName) return null;
       for (const e of edges as any[]) {
         const d = e?.data;
@@ -382,7 +494,7 @@ export default function App() {
           typeof d?.b?.deviceId === "string" &&
           typeof d?.b?.interfaceName === "string"
         ) {
-          return { peerDeviceId: d.b.deviceId, peerInterfaceName: d.b.interfaceName, cableType };
+          return { linkId: String(e.id), peerDeviceId: d.b.deviceId, peerInterfaceName: d.b.interfaceName, cableType };
         }
 
         if (
@@ -391,7 +503,7 @@ export default function App() {
           typeof d?.a?.deviceId === "string" &&
           typeof d?.a?.interfaceName === "string"
         ) {
-          return { peerDeviceId: d.a.deviceId, peerInterfaceName: d.a.interfaceName, cableType };
+          return { linkId: String(e.id), peerDeviceId: d.a.deviceId, peerInterfaceName: d.a.interfaceName, cableType };
         }
       }
       return null;
@@ -413,6 +525,8 @@ export default function App() {
       const link = findPortLinkInfo(selectedDeviceId, p.name);
       const selectedIface = selectedIfaces?.[p.name];
       const adminUp = typeof selectedIface?.adminUp === "boolean" ? selectedIface.adminUp : defaultAdminUpFor(selectedType);
+      const ipv4Address = typeof selectedIface?.ipv4Address === "string" ? selectedIface.ipv4Address : undefined;
+      const ipv4Mask = typeof selectedIface?.ipv4Mask === "string" ? selectedIface.ipv4Mask : undefined;
 
       let peerAdminUp: boolean | null = null;
       if (link) {
@@ -424,14 +538,23 @@ export default function App() {
       const connected = Boolean(link);
       const operUp = connected && adminUp && (peerAdminUp === null ? true : peerAdminUp);
 
+      let operReason: string | null = null;
+      if (!connected) operReason = "not connected";
+      else if (!adminUp) operReason = "admin down";
+      else if (peerAdminUp === false) operReason = "peer admin down";
+
       const isArmed = Boolean(armedPort && armedPort.deviceId === selectedDeviceId && armedPort.interfaceName === p.name);
 
       return {
         name: p.name,
         kind: p.kind,
         connected,
+        linkId: link?.linkId,
         adminUp,
         operUp,
+        operReason,
+        ipv4Address,
+        ipv4Mask,
         isArmed,
         peer: link ? `${link.peerDeviceId} ${link.peerInterfaceName}` : "",
         cableType: link?.cableType
@@ -738,7 +861,40 @@ export default function App() {
     try {
       await fetch(`${apiOrigin}/api/world/reset`, { method: "POST" });
     } catch {}
-  }, [apiOrigin, setEdges, setNodes]);
+
+    if (selectedLabId === "pc-001") {
+      routerCounterRef.current = 2;
+      pcCounterRef.current = 3;
+
+      void createDevice("R1", "router");
+      void createDevice("PC1", "pc");
+      void createDevice("PC2", "pc");
+
+      const starterNodes: Node<DeviceNodeData>[] = [
+        {
+          id: "R1",
+          type: "device",
+          position: { x: 360, y: 220 },
+          data: { label: "Router R1", deviceId: "R1" }
+        },
+        {
+          id: "PC1",
+          type: "device",
+          position: { x: 120, y: 130 },
+          data: { label: "PC PC1", deviceId: "PC1" }
+        },
+        {
+          id: "PC2",
+          type: "device",
+          position: { x: 120, y: 320 },
+          data: { label: "PC PC2", deviceId: "PC2" }
+        }
+      ];
+
+      setNodes(starterNodes);
+      setEdges([]);
+    }
+  }, [apiOrigin, createDevice, selectedLabId, setEdges, setNodes]);
 
   const saveLabToFile = useCallback(async () => {
     try {
@@ -1034,7 +1190,6 @@ export default function App() {
             <div className={`flip-card${portsPanelSide === "back" ? " flipped" : ""}`} style={{ minHeight: 180 }}>
               <div className="flip-card-inner">
                 <div className="flip-card-front" style={{ overflow: "auto", maxHeight: "calc(100vh - 460px)" }}>
-                  {/* FRONT: summary / quick actions */}
                   <div style={{ display: "grid", gap: 10 }}>
                     <div
                       style={{
@@ -1048,6 +1203,113 @@ export default function App() {
                     >
                       <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Quick actions</div>
                       <div style={{ display: "grid", gap: 8 }}>
+                        {(() => {
+                          const sid = selectedDeviceId;
+                          if (!sid) return null;
+                          const linkIds = Array.from(
+                            new Set(
+                              portsPanelUi.items
+                                .map((x) => (typeof x.linkId === "string" ? x.linkId : ""))
+                                .filter((x) => Boolean(x)) as string[]
+                            )
+                          );
+                          const busyCount = linkIds.filter((id) => Boolean(linkDeleteBusy[id])).length;
+                          const enabled = linkIds.length > 0 && busyCount === 0;
+
+                          return (
+                            <>
+                              <button
+                                className="btn-icon"
+                                style={{
+                                  justifyContent: "flex-start",
+                                  gap: 8,
+                                  padding: 10,
+                                  borderColor: "rgba(248, 113, 113, 0.35)",
+                                  opacity: enabled ? 1 : 0.6
+                                }}
+                                disabled={!enabled}
+                                onClick={(e) => {
+                                  const ids = linkIds.filter((id) => !linkDeleteBusy[id]);
+                                  if (ids.length === 0) return;
+
+                                  if (confirmDisconnectAll && !e.shiftKey) {
+                                    const ok = window.confirm(
+                                      `Disconnect all cables from ${sid}? (${ids.length} link${ids.length === 1 ? "" : "s"})`
+                                    );
+                                    if (!ok) return;
+                                  }
+
+                                  const edgeSnapshots = new Map<string, any>();
+                                  for (const id of ids) {
+                                    const snap = (edges as any[]).find((x) => x?.id === id);
+                                    if (snap) edgeSnapshots.set(id, snap);
+                                  }
+
+                                  setLinkDeleteError((prev) => {
+                                    let changed = false;
+                                    const next = { ...prev };
+                                    for (const id of ids) {
+                                      if (next[id]) {
+                                        delete next[id];
+                                        changed = true;
+                                      }
+                                    }
+                                    return changed ? next : prev;
+                                  });
+                                  setLinkDeleteBusy((prev) => {
+                                    const next = { ...prev };
+                                    for (const id of ids) next[id] = true;
+                                    return next;
+                                  });
+
+                                  const idSet = new Set(ids);
+                                  setEdges((prev) => prev.filter((x) => !idSet.has(x.id)));
+
+                                  void (async () => {
+                                    await Promise.all(
+                                      ids.map(async (id) => {
+                                        try {
+                                          await deleteLink(id);
+                                        } catch (err) {
+                                          setEdges((prev) => {
+                                            const snap = edgeSnapshots.get(id);
+                                            if (!snap) return prev;
+                                            if (prev.some((x) => x.id === id)) return prev;
+                                            return [...prev, snap];
+                                          });
+                                          const msg = err instanceof Error ? err.message : "Failed";
+                                          setLinkDeleteError((prev) => ({ ...prev, [id]: msg }));
+                                        } finally {
+                                          setLinkDeleteBusy((prev) => ({ ...prev, [id]: false }));
+                                        }
+                                      })
+                                    );
+                                  })();
+                                }}
+                                title={
+                                  linkIds.length === 0
+                                    ? "No connected links"
+                                    : busyCount > 0
+                                      ? "Disconnect in progress"
+                                      : confirmDisconnectAll
+                                        ? "Disconnect all cables (shift-click to skip confirm)"
+                                        : "Disconnect all cables"
+                                }
+                              >
+                                Disconnect all cables{linkIds.length > 0 ? ` (${linkIds.length})` : ""}
+                              </button>
+
+                              <button
+                                className="btn-icon"
+                                style={{ justifyContent: "flex-start", gap: 8, padding: 10 }}
+                                onClick={() => setConfirmDisconnectAll((v) => !v)}
+                                title="Toggle confirmation prompt"
+                              >
+                                Confirm bulk disconnect: {confirmDisconnectAll ? "on" : "off"}
+                              </button>
+                            </>
+                          );
+                        })()}
                         <button
                           className="btn-icon"
                           style={{ justifyContent: "flex-start", gap: 8, padding: 10 }}
@@ -1069,6 +1331,54 @@ export default function App() {
                       </div>
                     </div>
 
+                    <div
+                      style={{
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid rgba(148, 163, 184, 0.14)",
+                        background: "rgba(15, 23, 42, 0.35)",
+                        display: "grid",
+                        gap: 8
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Summary</div>
+
+                      {(() => {
+                        const items = portsPanelUi.items;
+                        const connected = items.filter((x) => x.connected).length;
+                        const up = items.filter((x) => x.connected && x.operUp).length;
+                        const down = items.filter((x) => x.connected && !x.operUp).length;
+                        const unused = items.filter((x) => !x.connected).length;
+
+                        const armed = armedPort && selectedDeviceId && armedPort.deviceId === selectedDeviceId ? armedPort.interfaceName : null;
+
+                        return (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 11 }}>
+                              <div style={{ color: "var(--text-muted)" }}>Connected</div>
+                              <div style={{ color: "var(--text-primary)", fontWeight: 700 }}>{connected}</div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 11 }}>
+                              <div style={{ color: "var(--text-muted)" }}>Up</div>
+                              <div style={{ color: "rgba(34, 197, 94, 0.95)", fontWeight: 700 }}>{up}</div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 11 }}>
+                              <div style={{ color: "var(--text-muted)" }}>Down</div>
+                              <div style={{ color: "rgba(251, 146, 60, 0.95)", fontWeight: 700 }}>{down}</div>
+                            </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, fontSize: 11 }}>
+                              <div style={{ color: "var(--text-muted)" }}>Unused</div>
+                              <div style={{ color: "var(--text-primary)", fontWeight: 700 }}>{unused}</div>
+                            </div>
+
+                            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                              Armed: {armed ? <span style={{ color: "rgba(251, 146, 60, 0.95)", fontWeight: 700 }}>{armed}</span> : "none"}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
                     <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                       Tip: click a port on the back side to arm it, then click another device.
                     </div>
@@ -1076,17 +1386,16 @@ export default function App() {
                 </div>
 
                 <div className="flip-card-back" style={{ overflow: "auto", maxHeight: "calc(100vh - 460px)" }}>
-                  {/* BACK: ports list */}
                   <div style={{ display: "grid", gap: 8 }}>
                     {portsPanelUi.items.map((p) => {
                       const sid = selectedDeviceId;
                       if (!sid) return null;
 
-                      const status = !p.connected ? "unused" : p.operUp ? "up" : "down";
-                      const statusColor =
-                        status === "up"
+                      const operStatus = !p.connected ? "unused" : p.operUp ? "up" : "down";
+                      const operStatusColor =
+                        operStatus === "up"
                           ? "rgba(34, 197, 94, 0.95)"
-                          : status === "down"
+                          : operStatus === "down"
                             ? "rgba(251, 146, 60, 0.95)"
                             : "rgba(148, 163, 184, 0.9)";
 
@@ -1119,8 +1428,8 @@ export default function App() {
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.kind.toUpperCase()}</div>
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <div style={{ width: 8, height: 8, borderRadius: 99, background: statusColor }} />
-                                <div style={{ fontSize: 11, color: statusColor, fontWeight: 700 }}>{status.toUpperCase()}</div>
+                                <div style={{ width: 8, height: 8, borderRadius: 99, background: operStatusColor }} />
+                                <div style={{ fontSize: 11, color: operStatusColor, fontWeight: 700 }}>{operStatus.toUpperCase()}</div>
                               </div>
                             </div>
                           </div>
@@ -1134,16 +1443,348 @@ export default function App() {
                             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.isArmed ? "Link mode: click a target device" : "Not connected"}</div>
                           )}
 
+                          {p.connected && p.linkId ? (
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                              <button
+                                className="btn-icon"
+                                style={{ padding: "4px 8px", opacity: linkDeleteBusy[p.linkId] ? 0.6 : 1 }}
+                                disabled={Boolean(linkDeleteBusy[p.linkId])}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+
+                                  const linkId = p.linkId as string;
+                                  if (linkDeleteBusy[linkId]) return;
+                                  const edgeSnapshot = (edges as any[]).find((x) => x?.id === linkId);
+
+                                  setLinkDeleteError((prev) => {
+                                    if (!prev[linkId]) return prev;
+                                    const next = { ...prev };
+                                    delete next[linkId];
+                                    return next;
+                                  });
+                                  setLinkDeleteBusy((prev) => ({ ...prev, [linkId]: true }));
+
+                                  setEdges((prev) => prev.filter((x) => x.id !== linkId));
+
+                                  void (async () => {
+                                    try {
+                                      await deleteLink(linkId);
+                                    } catch (err) {
+                                      setEdges((prev) => {
+                                        if (!edgeSnapshot) return prev;
+                                        if (prev.some((x) => x.id === linkId)) return prev;
+                                        return [...prev, edgeSnapshot];
+                                      });
+                                      const msg = err instanceof Error ? err.message : "Failed";
+                                      setLinkDeleteError((prev) => ({ ...prev, [linkId]: msg }));
+                                    } finally {
+                                      setLinkDeleteBusy((prev) => ({ ...prev, [linkId]: false }));
+                                    }
+                                  })();
+                                }}
+                                title="Disconnect"
+                              >
+                                {linkDeleteBusy[p.linkId] ? "..." : "disconnect"}
+                              </button>
+                            </div>
+                          ) : null}
+
+                          {p.connected && p.linkId && linkDeleteError[p.linkId] ? (
+                            <div style={{ fontSize: 10, color: "rgba(248, 113, 113, 0.95)" }}>{linkDeleteError[p.linkId]}</div>
+                          ) : null}
+
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                            <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>Admin: {p.adminUp ? "up" : "down"}</div>
+                            <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>
+                              IPv4:{" "}
+                              {p.ipv4Address && p.ipv4Mask
+                                ? `${p.ipv4Address}${(() => {
+                                    const pl = maskToPrefixLen(p.ipv4Mask);
+                                    return pl === null ? ` ${p.ipv4Mask}` : `/${pl}`;
+                                  })()}`
+                                : "-"}
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                className="btn-icon"
+                                style={{ padding: "4px 8px" }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+
+                                  const maskOrPrefix =
+                                    p.ipv4Mask && typeof p.ipv4Mask === "string"
+                                      ? (() => {
+                                          const pl = maskToPrefixLen(p.ipv4Mask);
+                                          return pl === null ? p.ipv4Mask : String(pl);
+                                        })()
+                                      : "";
+
+                                  setIpEditor({
+                                    deviceId: sid,
+                                    interfaceName: p.name,
+                                    ipv4Address: p.ipv4Address ?? "",
+                                    ipv4MaskOrPrefix: maskOrPrefix
+                                  });
+                                }}
+                                title="Edit IPv4"
+                              >
+                                ip
+                              </button>
+                              {p.ipv4Address || p.ipv4Mask ? (
+                                <button
+                                  className="btn-icon"
+                                  style={{ padding: "4px 8px", opacity: interfaceIpBusy[`${sid}:${p.name}`] ? 0.6 : 1 }}
+                                  disabled={Boolean(interfaceIpBusy[`${sid}:${p.name}`])}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+
+                                    const k = `${sid}:${p.name}`;
+                                    if (interfaceIpBusy[k]) return;
+                                    const prevIp = p.ipv4Address;
+                                    const prevMask = p.ipv4Mask;
+
+                                    setInterfaceIpError((prev) => {
+                                      if (!prev[k]) return prev;
+                                      const next = { ...prev };
+                                      delete next[k];
+                                      return next;
+                                    });
+                                    setInterfaceIpBusy((prev) => ({ ...prev, [k]: true }));
+
+                                    setDevicesById((prev) => {
+                                      const device = prev[sid];
+                                      if (!device) return prev;
+                                      const ifaces = device.config?.interfaces ?? {};
+                                      const iface = ifaces[p.name] ?? { name: p.name };
+                                      const nextIface = { ...iface };
+                                      delete nextIface.ipv4Address;
+                                      delete nextIface.ipv4Mask;
+                                      return {
+                                        ...prev,
+                                        [sid]: {
+                                          ...device,
+                                          config: {
+                                            ...device.config,
+                                            interfaces: {
+                                              ...ifaces,
+                                              [p.name]: nextIface
+                                            }
+                                          }
+                                        }
+                                      };
+                                    });
+
+                                    void (async () => {
+                                      try {
+                                        await setInterfaceIpv4(sid, p.name, null, null);
+                                      } catch (err) {
+                                        setDevicesById((prev) => {
+                                          const device = prev[sid];
+                                          if (!device) return prev;
+                                          const ifaces = device.config?.interfaces ?? {};
+                                          const iface = ifaces[p.name] ?? { name: p.name };
+                                          const nextIface = { ...iface };
+                                          if (typeof prevIp === "string" && prevIp) nextIface.ipv4Address = prevIp;
+                                          else delete nextIface.ipv4Address;
+                                          if (typeof prevMask === "string" && prevMask) nextIface.ipv4Mask = prevMask;
+                                          else delete nextIface.ipv4Mask;
+                                          return {
+                                            ...prev,
+                                            [sid]: {
+                                              ...device,
+                                              config: {
+                                                ...device.config,
+                                                interfaces: {
+                                                  ...ifaces,
+                                                  [p.name]: nextIface
+                                                }
+                                              }
+                                            }
+                                          };
+                                        });
+                                        const msg = err instanceof Error ? err.message : "Failed";
+                                        setInterfaceIpError((prev) => ({ ...prev, [k]: msg }));
+                                      } finally {
+                                        setInterfaceIpBusy((prev) => ({ ...prev, [k]: false }));
+                                      }
+                                    })();
+                                  }}
+                                  title="Clear IPv4"
+                                >
+                                  clear
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          {ipEditor && ipEditor.deviceId === sid && ipEditor.interfaceName === p.name ? (
+                            <div style={{ display: "grid", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                <input
+                                  value={ipEditor.ipv4Address}
+                                  onChange={(e) => setIpEditor((prev) => (prev ? { ...prev, ipv4Address: e.target.value } : prev))}
+                                  placeholder="IPv4 (e.g. 10.0.0.2)"
+                                  style={{ width: "100%", padding: 8, borderRadius: 8, background: "var(--bg-app)", color: "var(--text-primary)", border: "1px solid rgba(148, 163, 184, 0.18)" }}
+                                />
+                                <input
+                                  value={ipEditor.ipv4MaskOrPrefix}
+                                  onChange={(e) => setIpEditor((prev) => (prev ? { ...prev, ipv4MaskOrPrefix: e.target.value } : prev))}
+                                  placeholder="Mask or prefix (e.g. 24)"
+                                  style={{ width: "100%", padding: 8, borderRadius: 8, background: "var(--bg-app)", color: "var(--text-primary)", border: "1px solid rgba(148, 163, 184, 0.18)" }}
+                                />
+                              </div>
+
+                              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                                <button
+                                  className="btn-icon"
+                                  style={{ padding: "6px 10px" }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setIpEditor(null);
+                                  }}
+                                  title="Cancel"
+                                >
+                                  cancel
+                                </button>
+
+                                <button
+                                  className="btn-icon"
+                                  style={{ padding: "6px 10px", opacity: interfaceIpBusy[`${sid}:${p.name}`] ? 0.6 : 1 }}
+                                  disabled={Boolean(interfaceIpBusy[`${sid}:${p.name}`])}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+
+                                    const k = `${sid}:${p.name}`;
+                                    if (interfaceIpBusy[k]) return;
+                                    const ipRaw = ipEditor.ipv4Address.trim();
+                                    const maskInput = ipEditor.ipv4MaskOrPrefix.trim();
+
+                                    if (!ipRaw) {
+                                      setInterfaceIpError((prev) => ({ ...prev, [k]: "IPv4 address required (or use clear)" }));
+                                      return;
+                                    }
+                                    if (ipv4ToInt(ipRaw) === null) {
+                                      setInterfaceIpError((prev) => ({ ...prev, [k]: "Invalid IPv4 address" }));
+                                      return;
+                                    }
+                                    const mask = maskOrPrefixToMask(maskInput);
+                                    if (!mask) {
+                                      setInterfaceIpError((prev) => ({ ...prev, [k]: "Invalid mask/prefix" }));
+                                      return;
+                                    }
+
+                                    const prevIp = p.ipv4Address;
+                                    const prevMask = p.ipv4Mask;
+
+                                    setInterfaceIpError((prev) => {
+                                      if (!prev[k]) return prev;
+                                      const next = { ...prev };
+                                      delete next[k];
+                                      return next;
+                                    });
+                                    setInterfaceIpBusy((prev) => ({ ...prev, [k]: true }));
+
+                                    setDevicesById((prev) => {
+                                      const device = prev[sid];
+                                      if (!device) return prev;
+                                      const ifaces = device.config?.interfaces ?? {};
+                                      const iface = ifaces[p.name] ?? { name: p.name };
+                                      return {
+                                        ...prev,
+                                        [sid]: {
+                                          ...device,
+                                          config: {
+                                            ...device.config,
+                                            interfaces: {
+                                              ...ifaces,
+                                              [p.name]: { ...iface, ipv4Address: ipRaw, ipv4Mask: mask }
+                                            }
+                                          }
+                                        }
+                                      };
+                                    });
+
+                                    void (async () => {
+                                      try {
+                                        await setInterfaceIpv4(sid, p.name, ipRaw, mask);
+                                        setIpEditor(null);
+                                      } catch (err) {
+                                        setDevicesById((prev) => {
+                                          const device = prev[sid];
+                                          if (!device) return prev;
+                                          const ifaces = device.config?.interfaces ?? {};
+                                          const iface = ifaces[p.name] ?? { name: p.name };
+                                          const nextIface = { ...iface };
+                                          if (typeof prevIp === "string" && prevIp) nextIface.ipv4Address = prevIp;
+                                          else delete nextIface.ipv4Address;
+                                          if (typeof prevMask === "string" && prevMask) nextIface.ipv4Mask = prevMask;
+                                          else delete nextIface.ipv4Mask;
+                                          return {
+                                            ...prev,
+                                            [sid]: {
+                                              ...device,
+                                              config: {
+                                                ...device.config,
+                                                interfaces: {
+                                                  ...ifaces,
+                                                  [p.name]: nextIface
+                                                }
+                                              }
+                                            }
+                                          };
+                                        });
+                                        const msg = err instanceof Error ? err.message : "Failed";
+                                        setInterfaceIpError((prev) => ({ ...prev, [k]: msg }));
+                                      } finally {
+                                        setInterfaceIpBusy((prev) => ({ ...prev, [k]: false }));
+                                      }
+                                    })();
+                                  }}
+                                  title="Apply"
+                                >
+                                  apply
+                                </button>
+                              </div>
+
+                              {interfaceIpError[`${sid}:${p.name}`] ? (
+                                <div style={{ fontSize: 10, color: "rgba(248, 113, 113, 0.95)" }}>{interfaceIpError[`${sid}:${p.name}`]}</div>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <div style={{ display: "grid", gap: 2 }}>
+                              <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>Admin: {p.adminUp ? "up" : "down"}</div>
+                              <div style={{ fontSize: 10, color: "var(--text-muted)", opacity: 0.9 }}>
+                                Oper: {!p.connected ? "unused" : p.operUp ? "up" : "down"}
+                                {!p.operUp && p.operReason ? ` (${p.operReason})` : ""}
+                              </div>
+                            </div>
 
                             <button
                               className="btn-icon"
-                              style={{ padding: "4px 8px" }}
+                              style={{ padding: "4px 8px", opacity: interfaceAdminBusy[`${sid}:${p.name}`] ? 0.6 : 1 }}
+                              disabled={Boolean(interfaceAdminBusy[`${sid}:${p.name}`])}
                               onClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
+                                const k = `${sid}:${p.name}`;
+                                if (interfaceAdminBusy[k]) return;
                                 const newAdminUp = !p.adminUp;
+                                const prevAdminUp = p.adminUp;
+
+                                setInterfaceAdminError((prev) => {
+                                  if (!prev[k]) return prev;
+                                  const next = { ...prev };
+                                  delete next[k];
+                                  return next;
+                                });
+                                setInterfaceAdminBusy((prev) => ({ ...prev, [k]: true }));
+
                                 setDevicesById((prev) => {
                                   const device = prev[sid];
                                   if (!device) return prev;
@@ -1163,13 +1804,49 @@ export default function App() {
                                     }
                                   };
                                 });
-                                void setInterfaceAdminUp(sid, p.name, newAdminUp).catch(() => {});
+
+                                void (async () => {
+                                  try {
+                                    await setInterfaceAdminUp(sid, p.name, newAdminUp);
+                                  } catch (err) {
+                                    setDevicesById((prev) => {
+                                      const device = prev[sid];
+                                      if (!device) return prev;
+                                      const ifaces = device.config?.interfaces ?? {};
+                                      const iface = ifaces[p.name] ?? { name: p.name };
+                                      return {
+                                        ...prev,
+                                        [sid]: {
+                                          ...device,
+                                          config: {
+                                            ...device.config,
+                                            interfaces: {
+                                              ...ifaces,
+                                              [p.name]: { ...iface, adminUp: prevAdminUp }
+                                            }
+                                          }
+                                        }
+                                      };
+                                    });
+
+                                    const msg = err instanceof Error ? err.message : "Failed";
+                                    setInterfaceAdminError((prev) => ({ ...prev, [k]: msg }));
+                                  } finally {
+                                    setInterfaceAdminBusy((prev) => ({ ...prev, [k]: false }));
+                                  }
+                                })();
                               }}
                               title={p.adminUp ? "Shutdown" : "No shutdown"}
                             >
-                              {p.adminUp ? "down" : "up"}
+                              {interfaceAdminBusy[`${sid}:${p.name}`] ? "..." : p.adminUp ? "down" : "up"}
                             </button>
                           </div>
+
+                          {interfaceAdminError[`${sid}:${p.name}`] ? (
+                            <div style={{ fontSize: 10, color: "rgba(248, 113, 113, 0.95)" }}>
+                              {interfaceAdminError[`${sid}:${p.name}`]}
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
