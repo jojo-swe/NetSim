@@ -11,6 +11,10 @@
     "dev:web": "npm run dev -w apps/web",
     "regress:next-hop": "npm run regress:next-hop -w apps/api",
     "regress:cables": "npm run regress:cables -w apps/api",
+    "test": "npm run test -w @netsim/shared && npm run test -w apps/api && npm run test -w apps/web",
+    "test:shared": "npm run test -w @netsim/shared",
+    "test:api": "npm run test -w apps/api",
+    "test:web": "npm run test -w apps/web",
     "build": "npm run build -w @netsim/shared && npm run build -w apps/api && npm run build -w apps/web",
     "start": "npm run start -w apps/api"
   },

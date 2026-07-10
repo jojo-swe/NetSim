@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "regress:next-hop": "tsx src/regression/nextHopReachability.ts",
-    "regress:cables": "tsx src/regression/cableCompatibility.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "regress:next-hop": "vitest run src/regression/nextHopReachability.ts",
+    "regress:cables": "vitest run src/regression/cableCompatibility.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js"
   },
@@ -21,7 +24,9 @@
     "@types/express": "^4.17.21",
     "@types/node": "^20.17.12",
     "@types/ws": "^8.5.13",
+    "@vitest/coverage-v8": "^4.1.10",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.10"
   }
 }

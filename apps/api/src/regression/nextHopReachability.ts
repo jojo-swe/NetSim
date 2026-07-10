@@ -1,9 +1,6 @@
+import { describe, it, expect } from "vitest";
 import { CliSession } from "../cli/cliSession.js";
 import { World } from "../sim/world.js";
-
-function assert(condition: unknown, message: string): void {
-  if (!condition) throw new Error(message);
-}
 
 function setIf(
   world: World,
@@ -30,266 +27,190 @@ function showIpRoute(world: World, deviceId: string): string {
   return cli.executeLine("show ip route").output;
 }
 
-function testUnreachableDefaultGateway(): void {
-  const world = new World();
-  world.createDevice({ id: "H1", type: "host" });
-  world.createDevice({ id: "R1", type: "router" });
-  world.createDevice({ id: "H2", type: "host" });
+describe("next-hop reachability", () => {
+  it("unreachable default-gateway is ignored", () => {
+    const world = new World();
+    world.createDevice({ id: "H1", type: "host" });
+    world.createDevice({ id: "R1", type: "router" });
+    world.createDevice({ id: "H2", type: "host" });
 
-  world.createLink({
-    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
-  world.createLink({
-    a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
+    world.createLink({
+      a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
+    world.createLink({
+      a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
+      b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
 
-  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
-  const h1 = world.getDevice("H1")!;
-  h1.config.defaultGateway = "10.0.99.99";
+    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+    const h1 = world.getDevice("H1")!;
+    h1.config.defaultGateway = "10.0.99.99";
 
-  setIf(world, "R1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-  setIf(world, "R1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
 
-  setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-  const h2 = world.getDevice("H2")!;
-  h2.config.defaultGateway = "10.0.1.1";
+    setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+    const h2 = world.getDevice("H2")!;
+    h2.config.defaultGateway = "10.0.1.1";
 
-  assert(world.canPing("H1", "10.0.1.2") === false, "ping should fail with unreachable default-gateway");
+    expect(world.canPing("H1", "10.0.1.2")).toBe(false);
 
-  const r = showIpRoute(world, "H1");
-  assert(r.includes("Gateway of last resort is not set"), "show ip route should not set gateway");
-  assert(!r.includes("S*   0.0.0.0/0"), "show ip route should not show S* default route");
-}
-
-function testUnreachableStaticDefaultDoesNotOverrideReachableDefaultGateway(): void {
-  const world = new World();
-  world.createDevice({ id: "H1", type: "host" });
-  world.createDevice({ id: "R1", type: "router" });
-  world.createDevice({ id: "H2", type: "host" });
-
-  world.createLink({
-    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
-  world.createLink({
-    a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
+    const r = showIpRoute(world, "H1");
+    expect(r).toContain("Gateway of last resort is not set");
+    expect(r).not.toContain("S*   0.0.0.0/0");
   });
 
-  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
-  const h1 = world.getDevice("H1")!;
-  h1.config.defaultGateway = "10.0.0.1";
-  h1.config.staticRoutes.push({ destination: "0.0.0.0", mask: "0.0.0.0", nextHop: "192.168.99.99" });
+  it("unreachable static default route does not override reachable default-gateway", () => {
+    const world = new World();
+    world.createDevice({ id: "H1", type: "host" });
+    world.createDevice({ id: "R1", type: "router" });
+    world.createDevice({ id: "H2", type: "host" });
 
-  setIf(world, "R1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-  setIf(world, "R1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+    world.createLink({
+      a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
+    world.createLink({
+      a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
+      b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
 
-  setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-  const h2 = world.getDevice("H2")!;
-  h2.config.defaultGateway = "10.0.1.1";
+    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+    const h1 = world.getDevice("H1")!;
+    h1.config.defaultGateway = "10.0.0.1";
+    h1.config.staticRoutes.push({ destination: "0.0.0.0", mask: "0.0.0.0", nextHop: "192.168.99.99" });
 
-  assert(world.canPing("H1", "10.0.1.2") === true, "ping should succeed via reachable default-gateway");
+    setIf(world, "R1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
 
-  const tr = world.traceRoute("H1", "10.0.1.2");
-  assert(tr.ok === true, "traceroute should succeed");
-  assert(
-    JSON.stringify(tr.hops) === JSON.stringify(["10.0.0.1", "10.0.1.2"]),
-    `unexpected traceroute hops: ${JSON.stringify(tr.hops)}`
-  );
+    setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+    const h2 = world.getDevice("H2")!;
+    h2.config.defaultGateway = "10.0.1.1";
 
-  const r = showIpRoute(world, "H1");
-  assert(r.includes("Gateway of last resort is 10.0.0.1"), "show ip route should set gateway");
-  assert(r.includes("S*   0.0.0.0/0"), "show ip route should show S* default route");
-  assert(!r.includes("192.168.99.99"), "show ip route should not show unreachable static next-hop");
-}
+    expect(world.canPing("H1", "10.0.1.2")).toBe(true);
 
-function testUnreachableStaticDoesNotOverrideReachableSpecificRoute(): void {
-  const world = new World();
-  world.createDevice({ id: "H1", type: "host" });
-  world.createDevice({ id: "R1", type: "router" });
-  world.createDevice({ id: "R2", type: "router" });
-  world.createDevice({ id: "H2", type: "host" });
+    const tr = world.traceRoute("H1", "10.0.1.2");
+    expect(tr.ok).toBe(true);
+    expect(tr.hops).toEqual(["10.0.0.1", "10.0.1.2"]);
 
-  world.createLink({
-    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
-  world.createLink({
-    a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "R2", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
-  world.createLink({
-    a: { deviceId: "R2", interfaceName: "GigabitEthernet0/1" },
-    b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
+    const r = showIpRoute(world, "H1");
+    expect(r).toContain("Gateway of last resort is 10.0.0.1");
+    expect(r).toContain("S*   0.0.0.0/0");
+    expect(r).not.toContain("192.168.99.99");
   });
 
-  setIf(world, "H1", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-  world.getDevice("H1")!.config.defaultGateway = "10.0.1.1";
+  it("unreachable static route does not override reachable static route", () => {
+    const world = new World();
+    world.createDevice({ id: "H1", type: "host" });
+    world.createDevice({ id: "R1", type: "router" });
+    world.createDevice({ id: "R2", type: "router" });
+    world.createDevice({ id: "H2", type: "host" });
 
-  setIf(world, "R1", "GigabitEthernet0/0", "10.0.1.1", "255.255.255.0", true);
-  setIf(world, "R1", "GigabitEthernet0/1", "10.0.12.1", "255.255.255.0", true);
-  const r1 = world.getDevice("R1")!;
-  r1.config.staticRoutes.push({ destination: "10.0.2.0", mask: "255.255.255.0", nextHop: "192.168.99.99" });
-  r1.config.staticRoutes.push({ destination: "10.0.2.0", mask: "255.255.255.0", nextHop: "10.0.12.2" });
+    world.createLink({
+      a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
+    world.createLink({
+      a: { deviceId: "R1", interfaceName: "GigabitEthernet0/1" },
+      b: { deviceId: "R2", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
+    world.createLink({
+      a: { deviceId: "R2", interfaceName: "GigabitEthernet0/1" },
+      b: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
 
-  setIf(world, "R2", "GigabitEthernet0/0", "10.0.12.2", "255.255.255.0", true);
-  setIf(world, "R2", "GigabitEthernet0/1", "10.0.2.1", "255.255.255.0", true);
-  world.getDevice("R2")!.config.staticRoutes.push({
-    destination: "10.0.1.0",
-    mask: "255.255.255.0",
-    nextHop: "10.0.12.1"
+    setIf(world, "H1", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+    world.getDevice("H1")!.config.defaultGateway = "10.0.1.1";
+
+    setIf(world, "R1", "GigabitEthernet0/0", "10.0.1.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/1", "10.0.12.1", "255.255.255.0", true);
+    const r1 = world.getDevice("R1")!;
+    r1.config.staticRoutes.push({ destination: "10.0.2.0", mask: "255.255.255.0", nextHop: "192.168.99.99" });
+    r1.config.staticRoutes.push({ destination: "10.0.2.0", mask: "255.255.255.0", nextHop: "10.0.12.2" });
+
+    setIf(world, "R2", "GigabitEthernet0/0", "10.0.12.2", "255.255.255.0", true);
+    setIf(world, "R2", "GigabitEthernet0/1", "10.0.2.1", "255.255.255.0", true);
+    world.getDevice("R2")!.config.staticRoutes.push({
+      destination: "10.0.1.0",
+      mask: "255.255.255.0",
+      nextHop: "10.0.12.1"
+    });
+
+    setIf(world, "H2", "GigabitEthernet0/0", "10.0.2.2", "255.255.255.0", true);
+    world.getDevice("H2")!.config.defaultGateway = "10.0.2.1";
+
+    expect(world.canPing("H1", "10.0.2.2")).toBe(true);
+
+    const tr = world.traceRoute("H1", "10.0.2.2");
+    expect(tr.ok).toBe(true);
+    expect(tr.hops).toEqual(["10.0.1.1", "10.0.12.2", "10.0.2.2"]);
+
+    const r = showIpRoute(world, "R1");
+    expect(r).toContain("10.0.12.2");
+    expect(r).not.toContain("192.168.99.99");
   });
 
-  setIf(world, "H2", "GigabitEthernet0/0", "10.0.2.2", "255.255.255.0", true);
-  world.getDevice("H2")!.config.defaultGateway = "10.0.2.1";
+  it("l3switch bridges l2 between hosts", () => {
+    const world = new World();
+    world.createDevice({ id: "H1", type: "host" });
+    world.createDevice({ id: "H2", type: "host" });
+    world.createDevice({ id: "L3SW1", type: "l3switch" });
 
-  assert(world.canPing("H1", "10.0.2.2") === true, "ping should succeed via reachable static route");
+    world.createLink({
+      a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
+    world.createLink({
+      a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
+      cableType: "auto"
+    });
 
-  const tr = world.traceRoute("H1", "10.0.2.2");
-  assert(tr.ok === true, "traceroute should succeed");
-  assert(
-    JSON.stringify(tr.hops) === JSON.stringify(["10.0.1.1", "10.0.12.2", "10.0.2.2"]),
-    `unexpected traceroute hops: ${JSON.stringify(tr.hops)}`
-  );
+    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+    setIf(world, "H2", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
 
-  const r = showIpRoute(world, "R1");
-  assert(r.includes("10.0.12.2"), "show ip route should include reachable static next-hop");
-  assert(!r.includes("192.168.99.99"), "show ip route should not show unreachable static next-hop");
-}
-
-function testL3SwitchBridgesL2(): void {
-  const world = new World();
-  world.createDevice({ id: "H1", type: "host" });
-  world.createDevice({ id: "H2", type: "host" });
-  world.createDevice({ id: "L3SW1", type: "l3switch" });
-
-  world.createLink({
-    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
-  world.createLink({
-    a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
-    cableType: "auto"
+    expect(world.canPing("H1", "10.0.0.2")).toBe(true);
   });
 
-  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-  setIf(world, "H2", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+  it("l3switch routes l3 between subnets", () => {
+    const world = new World();
+    world.createDevice({ id: "H1", type: "host" });
+    world.createDevice({ id: "H2", type: "host" });
+    world.createDevice({ id: "L3SW1", type: "l3switch" });
 
-  assert(world.canPing("H1", "10.0.0.2") === true, "ping should succeed across l3switch L2 bridging");
-}
+    world.createLink({
+      a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
+      cableType: "auto"
+    });
+    world.createLink({
+      a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
+      b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
+      cableType: "auto"
+    });
 
-function testL3SwitchRoutesL3(): void {
-  const world = new World();
-  world.createDevice({ id: "H1", type: "host" });
-  world.createDevice({ id: "H2", type: "host" });
-  world.createDevice({ id: "L3SW1", type: "l3switch" });
+    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+    world.getDevice("H1")!.config.defaultGateway = "10.0.0.1";
 
-  world.createLink({
-    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
+    setIf(world, "L3SW1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
+    setIf(world, "L3SW1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+
+    setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+    world.getDevice("H2")!.config.defaultGateway = "10.0.1.1";
+
+    expect(world.canPing("H1", "10.0.1.2")).toBe(true);
+
+    const tr = world.traceRoute("H1", "10.0.1.2");
+    expect(tr.ok).toBe(true);
+    expect(tr.hops).toEqual(["10.0.0.1", "10.0.1.2"]);
   });
-  world.createLink({
-    a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
-    cableType: "auto"
-  });
-
-  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
-  world.getDevice("H1")!.config.defaultGateway = "10.0.0.1";
-
-  setIf(world, "L3SW1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-  setIf(world, "L3SW1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
-
-  setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-  world.getDevice("H2")!.config.defaultGateway = "10.0.1.1";
-
-  assert(world.canPing("H1", "10.0.1.2") === true, "ping should succeed via l3switch routing");
-
-  const tr = world.traceRoute("H1", "10.0.1.2");
-  assert(tr.ok === true, "traceroute should succeed");
-  assert(
-    JSON.stringify(tr.hops) === JSON.stringify(["10.0.0.1", "10.0.1.2"]),
-    `unexpected traceroute hops: ${JSON.stringify(tr.hops)}`
-  );
-}
-
-function testL3SwitchRoutesBetweenVlans(): void {
-  const world = new World();
-  world.createDevice({ id: "H1", type: "host" });
-  world.createDevice({ id: "H2", type: "host" });
-  world.createDevice({ id: "L3SW1", type: "l3switch" });
-
-  world.createLink({
-    a: { deviceId: "H1", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/0" },
-    cableType: "auto"
-  });
-  world.createLink({
-    a: { deviceId: "H2", interfaceName: "GigabitEthernet0/0" },
-    b: { deviceId: "L3SW1", interfaceName: "GigabitEthernet0/1" },
-    cableType: "auto"
-  });
-
-  setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
-  world.getDevice("H1")!.config.defaultGateway = "10.0.0.1";
-
-  setIf(world, "L3SW1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-  setIf(world, "L3SW1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
-
-  setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-  world.getDevice("H2")!.config.defaultGateway = "10.0.1.1";
-
-  assert(world.canPing("H1", "10.0.1.2") === true, "ping should succeed via l3switch routing");
-
-  const tr = world.traceRoute("H1", "10.0.1.2");
-  assert(tr.ok === true, "traceroute should succeed");
-  assert(
-    JSON.stringify(tr.hops) === JSON.stringify(["10.0.0.1", "10.0.1.2"]),
-    `unexpected traceroute hops: ${JSON.stringify(tr.hops)}`
-  );
-}
-
-const tests: Array<{ name: string; run: () => void }> = [
-  { name: "unreachable default-gateway is ignored", run: testUnreachableDefaultGateway },
-  {
-    name: "unreachable static default route does not override reachable default-gateway",
-    run: testUnreachableStaticDefaultDoesNotOverrideReachableDefaultGateway
-  },
-  {
-    name: "unreachable static route does not override reachable static route",
-    run: testUnreachableStaticDoesNotOverrideReachableSpecificRoute
-  },
-  { name: "l3switch bridges l2 between hosts", run: testL3SwitchBridgesL2 },
-  { name: "l3switch routes l3 between subnets", run: testL3SwitchRoutesL3 }
-];
-
-let failed = 0;
-for (const t of tests) {
-  try {
-    t.run();
-    process.stdout.write(`ok - ${t.name}\n`);
-  } catch (e) {
-    failed++;
-    process.stderr.write(`not ok - ${t.name}\n`);
-    process.stderr.write(`${e instanceof Error ? e.stack ?? e.message : String(e)}\n`);
-  }
-}
-
-if (failed > 0) {
-  process.stderr.write(`\n${failed} test(s) failed\n`);
-  process.exit(1);
-}
-
-process.stdout.write(`\n${tests.length} test(s) passed\n`);
+});
