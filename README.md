@@ -1,42 +1,60 @@
 # NetSim
 
+[![CI](https://github.com/jojo-swe/NetSim/actions/workflows/ci.yml/badge.svg)](https://github.com/jojo-swe/NetSim/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-27%20passing-brightgreen.svg)](#testing)
+
 NetSim is a CCNA-first, lab-driven **network simulator** with an IOS-like CLI and a modern drag-and-drop topology UI.
 
-Goals:
+Built for students and professionals who want to practice Cisco-style networking labs without proprietary firmware or expensive hardware.
 
-- Practice CCNA/CCNP-style labs with realistic workflows.
-- Use Cisco-like configuration modes and commands (incrementally implemented).
-- Save/share labs and run validations with hints.
+## Features
 
-## Roadmap (near-term)
+- **Drag-and-drop topology editor** powered by React Flow
+- **IOS-like CLI** over WebSocket with mode-aware commands (exec, privileged, config, interface)
+- **Realistic simulation** — ARP, L2 forwarding, static routing, ping with return-path verification
+- **Cable types** — copper straight/crossover, fiber with compatibility validation
+- **Per-interface management** — admin up/down, IPv4 addressing, link status indicators
+- **Lab system** — save/load/export labs as JSON, validate topologies with actionable feedback
+- **In-browser terminal** powered by xterm.js
+- **Deterministic mode** for reproducible labs and tests
 
-- Interface-level link attachment (choose ports, not just devices).
-- Cable types (copper straight/crossover, fiber) with compatibility validation.
-- Visual link status (up/down) and per-interface state indicators.
+## Roadmap
 
-Non-goals:
+- Dynamic routing protocols (OSPF, BGP)
+- VLAN and trunk configuration
+- ACLs and NAT
+- Lab sharing and community labs
+- C-based CLI sidecar via NDJSON RPC
 
-- Shipping proprietary Cisco images/firmware. NetSim is a simulator. If later we add “real image” integration, you’ll provide the images yourself.
+## Non-goals
 
-## Quick start (local)
+NetSim is a **simulator**, not an emulator. It does not ship proprietary Cisco images or firmware. IOS-like syntax is implemented incrementally with a focus on CCNA/CCNP lab commands.
 
-Prereqs:
+## Quick Start (Local)
 
-- Node.js 20+
+### Prerequisites
 
-Run:
+- **Node.js** 20+
+- **npm** 10+ (ships with Node 20)
 
-- `npm install`
-- `npm run dev`
+### Install and run
+
+```bash
+git clone https://github.com/jojo-swe/NetSim.git
+cd NetSim
+npm install
+npm run dev
+```
 
 Then open:
 
-- Web UI: `http://localhost:5173`
-- API: `http://localhost:3001/api/health`
+- **Web UI**: <http://localhost:5173>
+- **API health check**: <http://localhost:3001/api/health>
 
-## CLI interfaces
+## CLI Interfaces
 
-NetSim exposes an IOS-like CLI over a WebSocket endpoint, and a localhost-only TCP RPC endpoint intended for a future C-based CLI sidecar.
+NetSim exposes an IOS-like CLI over a WebSocket endpoint, and a localhost-only TCP RPC endpoint for CLI sidecar integration.
 
 - **WebSocket CLI**: `ws://localhost:3001/ws/cli`
   - Backwards compatible JSON protocol:
@@ -83,13 +101,13 @@ RPC health check using PowerShell:
 - `$reader.ReadLine()`
 - `$tcp.Close()`
 
-## Quick start (Docker)
+## Quick Start (Docker)
 
-- `docker compose up --build`
+```bash
+docker compose up --build
+```
 
-Open:
-
-- Web UI: `http://localhost:5173`
+Open <http://localhost:5173> in your browser.
 
 ## Repo layout
 
@@ -135,6 +153,15 @@ CI runs automatically via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## Documentation
 
-- `docs/SPEC.md` (200+ feature specification)
-- `docs/ARCHITECTURE.md`
-- `CHANGELOG.md`
+- [**SPEC.md**](docs/SPEC.md) — Feature specification (220+ items)
+- [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) — Architecture overview and module structure
+- [**CHANGELOG.md**](CHANGELOG.md) — Release history
+- [**CONTRIBUTING.md**](CONTRIBUTING.md) — Contribution guide and standards
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, coding standards, and the pull request process.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
