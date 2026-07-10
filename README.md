@@ -94,8 +94,44 @@ Open:
 ## Repo layout
 
 - `apps/api`: simulation engine + IOS-like CLI over WebSocket/HTTP
+  - `src/sim/`: modular sim engine (`world.ts` facade, `arp.ts`, `l2.ts`, `routing.ts`, `mac.ts`, `eventBus.ts`)
+  - `src/regression/`: Vitest regression tests (next-hop reachability, cable compatibility)
 - `apps/web`: React UI (drag/drop topology + in-browser terminal)
+  - `src/components/`: extracted UI components (`PortsPanel`, `LinkWizard`, `CableLegend`)
+  - `src/hooks/`: custom React hooks (`useLocalStorage`, `useDevices`, `useLabs`, `useDeviceCreation`)
+  - `src/utils/`: utility modules (`cableUtils`, `portUtils`)
+  - `src/api.ts`: centralized API client
+  - `src/types.ts`: shared web types and helpers
+- `packages/shared`: shared types and utilities (`@netsim/shared`)
+  - `src/types.ts`: device/port/cable type definitions
+  - `src/ipUtils.ts`: IPv4 parsing, subnet checks, mask conversion
+  - `src/devicePorts.ts`: per-device-type port definitions
 - `docs`: spec, architecture, and process docs
+
+## Testing
+
+All packages use [Vitest](https://vitest.dev/) for testing.
+
+Run all tests:
+
+```bash
+npm test
+```
+
+Run per-package:
+
+```bash
+# Shared package (14 unit tests)
+cd packages/shared && npx vitest run
+
+# API package (11 regression tests)
+cd apps/api && npx vitest run
+
+# Web package (2 smoke tests)
+cd apps/web && npx vitest run
+```
+
+CI runs automatically via GitHub Actions (`.github/workflows/ci.yml`).
 
 ## Documentation
 
