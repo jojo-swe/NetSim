@@ -1,6 +1,6 @@
 import net from "node:net";
 
-import type { Device, DeviceType, Link, LinkEndpoint, StaticRouteConfig } from "../sim/types.js";
+import type { Device, DeviceType, Link, LinkEndpoint, StaticRouteConfig } from "@netsim/shared";
 
 type WorldLike = {
   createDevice(input: { id?: string; type?: DeviceType; hostname?: string }): Device;

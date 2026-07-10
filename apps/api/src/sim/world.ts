@@ -3,13 +3,17 @@ import {
   deviceCapabilities,
   deviceIsMdix,
   devicePortKind,
+  ipv4ToInt,
+  inSameSubnet,
+  maskToPrefixLen,
+  ipMatchesDestination,
   type Device,
   type DeviceType,
   type InterfaceConfig,
   type CableType,
   type Link,
   type LinkEndpoint
-} from "./types.js";
+} from "@netsim/shared";
 
 function defaultHostnameFor(type: DeviceType): string {
   return deviceCapabilities(type).defaultHostname;
@@ -20,54 +24,6 @@ function ensureInterfaceDefaults(name: string, adminUp: boolean): InterfaceConfi
     name,
     adminUp
   };
-}
-
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.split(".");
-  if (parts.length !== 4) return null;
-  let n = 0;
-  for (const part of parts) {
-    if (part.length === 0) return null;
-    const v = Number(part);
-    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
-    n = (n << 8) | v;
-  }
-  return n >>> 0;
-}
-
-function inSameSubnet(ip: string, mask: string, otherIp: string): boolean {
-  const ipN = ipv4ToInt(ip);
-  const maskN = ipv4ToInt(mask);
-  const otherN = ipv4ToInt(otherIp);
-  if (ipN === null || maskN === null || otherN === null) return false;
-  return (ipN & maskN) === (otherN & maskN);
-}
-
-function maskToPrefixLen(mask: string): number | null {
-  const m = ipv4ToInt(mask);
-  if (m === null) return null;
-
-  let seenZero = false;
-  let len = 0;
-  for (let i = 31; i >= 0; i--) {
-    const bit = (m >>> i) & 1;
-    if (bit === 1) {
-      if (seenZero) return null;
-      len++;
-    } else {
-      seenZero = true;
-    }
-  }
-
-  return len;
-}
-
-function ipMatchesDestination(targetIp: string, destination: string, mask: string): boolean {
-  const t = ipv4ToInt(targetIp);
-  const d = ipv4ToInt(destination);
-  const m = ipv4ToInt(mask);
-  if (t === null || d === null || m === null) return false;
-  return (t & m) === (d & m);
 }
 
 type ArpEntry = {

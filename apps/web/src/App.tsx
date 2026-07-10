@@ -20,87 +20,22 @@ import DeviceNode from "./DeviceNode";
 import { FloatingTerminal } from "./FloatingTerminal";
 import { DevicePalette } from "./DevicePalette";
 import { LabControls } from "./LabControls";
+import {
+  devicePorts,
+  deviceIsMdix,
+  ipv4ToInt,
+  prefixLenToMask,
+  maskToPrefixLen,
+  type DeviceType,
+  type CableType,
+  type DevicePort,
+  type PortKind
+} from "@netsim/shared";
 
 type DeviceNodeData = {
   label: string;
   deviceId: string;
 };
-
-type DeviceType = "router" | "switch" | "host" | "pc" | "l3switch" | "firewall" | "server" | "cloud";
-
-type PortKind = "rj45" | "sfp";
-
-type CableType = "auto" | "copper_straight" | "copper_crossover" | "fiber";
-
-type DevicePort = {
-  name: string;
-  kind: PortKind;
-};
-
-function rangePorts(prefix: string, start: number, count: number, kind: PortKind): DevicePort[] {
-  const ports: DevicePort[] = [];
-  for (let i = start; i < start + count; i++) {
-    ports.push({ name: `${prefix}${i}`, kind });
-  }
-  return ports;
-}
-
-function devicePorts(type: DeviceType): DevicePort[] {
-  switch (type) {
-    case "switch":
-      return [...rangePorts("GigabitEthernet0/", 0, 48, "rj45"), ...rangePorts("GigabitEthernet0/", 48, 4, "sfp")];
-    case "l3switch":
-      return [...rangePorts("GigabitEthernet0/", 0, 48, "rj45"), ...rangePorts("GigabitEthernet0/", 48, 4, "sfp")];
-    case "router":
-      return [...rangePorts("GigabitEthernet0/", 0, 4, "rj45"), ...rangePorts("GigabitEthernet0/", 4, 2, "sfp")];
-    case "firewall":
-      return [...rangePorts("GigabitEthernet0/", 0, 4, "rj45"), ...rangePorts("GigabitEthernet0/", 4, 2, "sfp")];
-    case "server":
-      return [...rangePorts("GigabitEthernet0/", 0, 2, "rj45")];
-    case "host":
-      return [...rangePorts("GigabitEthernet0/", 0, 1, "rj45")];
-    case "pc":
-      return [...rangePorts("GigabitEthernet0/", 0, 1, "rj45")];
-    case "cloud":
-      return [...rangePorts("GigabitEthernet0/", 0, 8, "rj45"), ...rangePorts("GigabitEthernet0/", 8, 2, "sfp")];
-  }
-}
-
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.trim().split(".");
-  if (parts.length !== 4) return null;
-  let n = 0;
-  for (const part of parts) {
-    const v = Number(part);
-    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
-    n = (n << 8) | v;
-  }
-  return n >>> 0;
-}
-
-function prefixLenToMask(prefixLen: number): string | null {
-  if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 32) return null;
-  const m = prefixLen === 0 ? 0 : ((0xffffffff << (32 - prefixLen)) >>> 0);
-  const parts = [(m >>> 24) & 255, (m >>> 16) & 255, (m >>> 8) & 255, m & 255];
-  return parts.join(".");
-}
-
-function maskToPrefixLen(mask: string): number | null {
-  const m = ipv4ToInt(mask);
-  if (m === null) return null;
-  let seenZero = false;
-  let len = 0;
-  for (let i = 31; i >= 0; i--) {
-    const bit = (m >>> i) & 1;
-    if (bit === 1) {
-      if (seenZero) return null;
-      len++;
-    } else {
-      seenZero = true;
-    }
-  }
-  return len;
-}
 
 function maskOrPrefixToMask(input: string): string | null {
   const raw = input.trim();
@@ -112,10 +47,6 @@ function maskOrPrefixToMask(input: string): string | null {
   const n = Number(s);
   if (!Number.isInteger(n)) return null;
   return prefixLenToMask(n);
-}
-
-function deviceIsMdix(type: DeviceType): boolean {
-  return type === "switch" || type === "l3switch";
 }
 
 function cableTypeLabel(cableType: string | undefined): string {

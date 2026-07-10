@@ -2,6 +2,7 @@
   "name": "netsim",
   "private": true,
   "workspaces": [
+    "packages/*",
     "apps/*"
   ],
   "scripts": {
@@ -9,7 +10,8 @@
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
     "regress:next-hop": "npm run regress:next-hop -w apps/api",
-    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "regress:cables": "npm run regress:cables -w apps/api",
+    "build": "npm run build -w @netsim/shared && npm run build -w apps/api && npm run build -w apps/web",
     "start": "npm run start -w apps/api"
   },
   "devDependencies": {

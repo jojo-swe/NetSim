@@ -1,4 +1,11 @@
-import type { Device, StaticRouteConfig } from "../sim/types.js";
+import {
+  ipv4ToInt,
+  inSameSubnet,
+  networkAddress,
+  maskToPrefixLen,
+  type Device,
+  type StaticRouteConfig
+} from "@netsim/shared";
 
 type WorldLike = {
   isInterfaceOperUp(deviceId: string, interfaceName: string): boolean;
@@ -74,61 +81,6 @@ function canonicalInterfaceName(input: string): string {
     return `GigabitEthernet0/${m[1]}`;
   }
   return name;
-}
-
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.trim().split(".");
-  if (parts.length !== 4) return null;
-  let n = 0;
-  for (const part of parts) {
-    const v = Number(part);
-    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
-    n = (n << 8) | v;
-  }
-  return n >>> 0;
-}
-
-function intToIpv4(n: number): string {
-  return [
-    (n >>> 24) & 255,
-    (n >>> 16) & 255,
-    (n >>> 8) & 255,
-    n & 255
-  ].join(".");
-}
-
-function inSameSubnet(ip: string, mask: string, otherIp: string): boolean {
-  const ipN = ipv4ToInt(ip);
-  const maskN = ipv4ToInt(mask);
-  const otherN = ipv4ToInt(otherIp);
-  if (ipN === null || maskN === null || otherN === null) return false;
-  return (ipN & maskN) === (otherN & maskN);
-}
-
-function networkAddress(ip: string, mask: string): string | null {
-  const ipN = ipv4ToInt(ip);
-  const maskN = ipv4ToInt(mask);
-  if (ipN === null || maskN === null) return null;
-  return intToIpv4((ipN & maskN) >>> 0);
-}
-
-function maskToPrefixLen(mask: string): number | null {
-  const m = ipv4ToInt(mask);
-  if (m === null) return null;
-
-  let seenZero = false;
-  let len = 0;
-  for (let i = 31; i >= 0; i--) {
-    const bit = (m >>> i) & 1;
-    if (bit === 1) {
-      if (seenZero) return null;
-      len++;
-    } else {
-      seenZero = true;
-    }
-  }
-
-  return len;
 }
 
 export class CliSession {

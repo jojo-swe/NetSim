@@ -1,4 +1,11 @@
-import type { Device, InterfaceConfig } from "../sim/types.js";
+import {
+  ipv4ToInt,
+  prefixLenToMask,
+  networkAddress,
+  maskToPrefixLen,
+  type Device,
+  type InterfaceConfig
+} from "@netsim/shared";
 
 type WorldLike = {
   isInterfaceOperUp(deviceId: string, interfaceName: string): boolean;
@@ -24,57 +31,6 @@ type ShellCompletionResult = {
 
 function normalizeWhitespace(input: string): string {
   return input.trim().replace(/\s+/g, " ");
-}
-
-function ipv4ToInt(ip: string): number | null {
-  const parts = ip.trim().split(".");
-  if (parts.length !== 4) return null;
-  let n = 0;
-  for (const part of parts) {
-    const v = Number(part);
-    if (!Number.isInteger(v) || v < 0 || v > 255) return null;
-    n = (n << 8) | v;
-  }
-  return n >>> 0;
-}
-
-function prefixLenToMask(prefixLen: number): string | null {
-  if (!Number.isInteger(prefixLen) || prefixLen < 0 || prefixLen > 32) return null;
-  const m = prefixLen === 0 ? 0 : ((0xffffffff << (32 - prefixLen)) >>> 0);
-  const parts = [(m >>> 24) & 255, (m >>> 16) & 255, (m >>> 8) & 255, m & 255];
-  return parts.join(".");
-}
-
-function intToIpv4(n: number): string {
-  const v = n >>> 0;
-  const parts = [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
-  return parts.join(".");
-}
-
-function networkAddress(ip: string, mask: string): string | null {
-  const i = ipv4ToInt(ip);
-  const m = ipv4ToInt(mask);
-  if (i === null || m === null) return null;
-  return intToIpv4(i & m);
-}
-
-function maskToPrefixLen(mask: string): number | null {
-  const m = ipv4ToInt(mask);
-  if (m === null) return null;
-
-  let seenZero = false;
-  let len = 0;
-  for (let i = 31; i >= 0; i--) {
-    const bit = (m >>> i) & 1;
-    if (bit === 1) {
-      if (seenZero) return null;
-      len++;
-    } else {
-      seenZero = true;
-    }
-  }
-
-  return len;
 }
 
 function linuxIfName(iosIf: string): string {

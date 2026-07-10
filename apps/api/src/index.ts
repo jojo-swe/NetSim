@@ -7,7 +7,7 @@ import { CliSession } from "./cli/cliSession.js";
 import { LinuxSession } from "./cli/linuxSession.js";
 import { createNdjsonRpcServer } from "./rpc/ndjsonRpcServer.js";
 import { labs, validateLab } from "./labs/index.js";
-import type { CableType, DeviceType, Link } from "./sim/types.js";
+import type { CableType, DeviceType, Link } from "@netsim/shared";
 import { World } from "./sim/world.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
