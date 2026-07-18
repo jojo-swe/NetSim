@@ -8,19 +8,18 @@ import {
   type InterfaceConfig,
   type CableType,
   type Link,
-  type LinkEndpoint
+  type LinkEndpoint,
+  type OspfConfig
 } from "@netsim/shared";
 
 import { ArpStore } from "./arp.js";
 import { EventBus } from "./eventBus.js";
 import { L2Engine } from "./l2.js";
+import { OspfEngine, type OspfSnapshot } from "./ospf.js";
 import { RoutingEngine } from "./routing.js";
 
 function ensureInterfaceDefaults(name: string, adminUp: boolean): InterfaceConfig {
-  return {
-    name,
-    adminUp
-  };
+  return { name, adminUp };
 }
 
 function resolveCableType(
@@ -28,22 +27,13 @@ function resolveCableType(
   a: { deviceType: DeviceType; interfaceName: string },
   b: { deviceType: DeviceType; interfaceName: string }
 ): Exclude<CableType, "auto"> {
-  const aKind = devicePortKind(a.deviceType, a.interfaceName);
-  const bKind = devicePortKind(b.deviceType, b.interfaceName);
-
-  const aK = aKind ?? "rj45";
-  const bK = bKind ?? "rj45";
-
-  if (cableType === "auto") {
-    if (aK === "sfp" || bK === "sfp") return "fiber";
-
-    const aIsMdix = deviceIsMdix(a.deviceType);
-    const bIsMdix = deviceIsMdix(b.deviceType);
-    const sameRole = aIsMdix === bIsMdix;
-    return sameRole ? "copper_crossover" : "copper_straight";
-  }
-
-  return cableType;
+  const aKind = devicePortKind(a.deviceType, a.interfaceName) ?? "rj45";
+  const bKind = devicePortKind(b.deviceType, b.interfaceName) ?? "rj45";
+  if (cableType !== "auto") return cableType;
+  if (aKind === "sfp" || bKind === "sfp") return "fiber";
+  return deviceIsMdix(a.deviceType) === deviceIsMdix(b.deviceType)
+    ? "copper_crossover"
+    : "copper_straight";
 }
 
 function validateCableType(
@@ -51,27 +41,18 @@ function validateCableType(
   a: { deviceType: DeviceType; interfaceName: string },
   b: { deviceType: DeviceType; interfaceName: string }
 ): void {
-  const aKind = devicePortKind(a.deviceType, a.interfaceName);
-  const bKind = devicePortKind(b.deviceType, b.interfaceName);
-
-  const aK = aKind ?? "rj45";
-  const bK = bKind ?? "rj45";
-
+  const aKind = devicePortKind(a.deviceType, a.interfaceName) ?? "rj45";
+  const bKind = devicePortKind(b.deviceType, b.interfaceName) ?? "rj45";
   if (cableType === "fiber") {
-    if (aK !== "sfp" || bK !== "sfp") {
+    if (aKind !== "sfp" || bKind !== "sfp") {
       throw new Error("Fiber cable requires SFP ports on both ends");
     }
     return;
   }
-
-  if (aK !== "rj45" || bK !== "rj45") {
+  if (aKind !== "rj45" || bKind !== "rj45") {
     throw new Error("Copper cable requires RJ45 ports on both ends");
   }
-
-  const aIsMdix = deviceIsMdix(a.deviceType);
-  const bIsMdix = deviceIsMdix(b.deviceType);
-  const sameRole = aIsMdix === bIsMdix;
-
+  const sameRole = deviceIsMdix(a.deviceType) === deviceIsMdix(b.deviceType);
   if (cableType === "copper_straight" && sameRole) {
     throw new Error("Straight-through cable requires one MDI and one MDI-X port");
   }
@@ -89,11 +70,18 @@ export class World {
     (id) => this.devices.get(id),
     this.links
   );
+  private ospf = new OspfEngine(
+    (id) => this.devices.get(id),
+    () => this.devices.values(),
+    () => this.links.values(),
+    this.l2
+  );
   private routing = new RoutingEngine(
     (id) => this.devices.get(id),
     () => this.devices.values(),
     this.l2,
-    this.arp
+    this.arp,
+    (deviceId) => this.ospf.getRoutes(deviceId)
   );
 
   getEventBus(): EventBus {
@@ -121,18 +109,17 @@ export class World {
     this.arp.clear();
     for (const device of snapshot.devices) {
       const cloned = JSON.parse(JSON.stringify(device)) as Device;
-      if (!Array.isArray((cloned as any).config?.staticRoutes)) {
-        (cloned as any).config.staticRoutes = [];
+      if (!Array.isArray(cloned.config.staticRoutes)) cloned.config.staticRoutes = [];
+      if (cloned.config.ospf && !Array.isArray(cloned.config.ospf.networks)) {
+        cloned.config.ospf.networks = [];
       }
       this.devices.set(device.id, cloned);
       this.arp.ensureDevice(device.id);
     }
-    if (snapshot.links) {
-      for (const link of snapshot.links) {
-        const cloned = JSON.parse(JSON.stringify(link)) as any;
-        if (!cloned.cableType) cloned.cableType = "auto";
-        this.links.set(link.id, cloned as Link);
-      }
+    for (const link of snapshot.links ?? []) {
+      const cloned = JSON.parse(JSON.stringify(link)) as Link;
+      if (!cloned.cableType) cloned.cableType = "auto";
+      this.links.set(link.id, cloned);
     }
   }
 
@@ -143,44 +130,67 @@ export class World {
   createDevice(input: { id?: string; type?: DeviceType; hostname?: string }): Device {
     const id = input.id ?? randomUUID();
     const type: DeviceType = input.type ?? "router";
-
     const existing = this.devices.get(id);
     if (existing) {
       this.arp.ensureDevice(id);
       return existing;
     }
 
-    const caps = deviceCapabilities(type);
-    const hostname = input.hostname ?? (type === "pc" ? id : caps.defaultHostname);
-    const defaultAdminUp = caps.defaultAdminUp;
-
+    const capabilities = deviceCapabilities(type);
     const device: Device = {
       id,
       type,
       config: {
-        hostname,
+        hostname: input.hostname ?? (type === "pc" ? id : capabilities.defaultHostname),
         staticRoutes: [],
         interfaces: {
-          "GigabitEthernet0/0": ensureInterfaceDefaults("GigabitEthernet0/0", defaultAdminUp),
-          "GigabitEthernet0/1": ensureInterfaceDefaults("GigabitEthernet0/1", defaultAdminUp)
+          "GigabitEthernet0/0": ensureInterfaceDefaults(
+            "GigabitEthernet0/0",
+            capabilities.defaultAdminUp
+          ),
+          "GigabitEthernet0/1": ensureInterfaceDefaults(
+            "GigabitEthernet0/1",
+            capabilities.defaultAdminUp
+          )
         }
       }
     };
-
     this.devices.set(id, device);
     this.arp.ensureDevice(id);
     this.eventBus.emit({ type: "device:created", deviceId: id, deviceType: type });
     return device;
   }
 
+  configureOspf(deviceId: string, config: OspfConfig | undefined): void {
+    const device = this.getDevice(deviceId);
+    if (!device) throw new Error(`Unknown device: ${deviceId}`);
+    if (!deviceCapabilities(device.type).canRouteL3) {
+      throw new Error(`Device ${deviceId} cannot run OSPF`);
+    }
+    device.config.ospf = config
+      ? {
+          enabled: config.enabled,
+          processId: Math.max(1, Math.trunc(config.processId)),
+          routerId: config.routerId,
+          networks: config.networks.map((network) => ({
+            network: network.network,
+            wildcard: network.wildcard,
+            area: Math.max(0, Math.trunc(network.area))
+          }))
+        }
+      : undefined;
+  }
+
+  getOspfSnapshot(deviceId: string): OspfSnapshot | null {
+    return this.ospf.getSnapshot(deviceId);
+  }
+
   createLink(input: { id?: string; a: LinkEndpoint; b: LinkEndpoint; cableType?: CableType }): Link {
     if (input.a.deviceId === input.b.deviceId && input.a.interfaceName === input.b.interfaceName) {
       throw new Error("Invalid link endpoints");
     }
-
     const aDevice = this.getDevice(input.a.deviceId) ?? this.createDevice({ id: input.a.deviceId });
     const bDevice = this.getDevice(input.b.deviceId) ?? this.createDevice({ id: input.b.deviceId });
-
     if (!aDevice.config.interfaces[input.a.interfaceName]) {
       aDevice.config.interfaces[input.a.interfaceName] = ensureInterfaceDefaults(
         input.a.interfaceName,
@@ -193,14 +203,12 @@ export class World {
         deviceCapabilities(bDevice.type).defaultAdminUp
       );
     }
-
     if (this.l2.findLinkByEndpoint(input.a) || this.l2.findLinkByEndpoint(input.b)) {
       throw new Error("Interface already connected");
     }
 
-    const desiredCableType: CableType = input.cableType ?? "auto";
     const resolvedCableType = resolveCableType(
-      desiredCableType,
+      input.cableType ?? "auto",
       { deviceType: aDevice.type, interfaceName: input.a.interfaceName },
       { deviceType: bDevice.type, interfaceName: input.b.interfaceName }
     );
@@ -210,15 +218,14 @@ export class World {
       { deviceType: bDevice.type, interfaceName: input.b.interfaceName }
     );
 
-    const id = input.id ?? randomUUID();
     const link: Link = {
-      id,
-      a: { deviceId: input.a.deviceId, interfaceName: input.a.interfaceName },
-      b: { deviceId: input.b.deviceId, interfaceName: input.b.interfaceName },
+      id: input.id ?? randomUUID(),
+      a: { ...input.a },
+      b: { ...input.b },
       cableType: resolvedCableType
     };
-    this.links.set(id, link);
-    this.eventBus.emit({ type: "link:created", linkId: id });
+    this.links.set(link.id, link);
+    this.eventBus.emit({ type: "link:created", linkId: link.id });
     return link;
   }
 
