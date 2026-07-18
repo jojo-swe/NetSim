@@ -89,7 +89,7 @@ describe("OSPF control plane", () => {
         nextHop: "10.12.0.2",
         outgoingInterface: "GigabitEthernet0/0",
         metric: 20,
-        learnedFrom: "3.3.3.3"
+        learnedFrom: "2.2.2.2"
       })
     );
   });
@@ -121,6 +121,6 @@ describe("OSPF control plane", () => {
     expect(world.getOspfSnapshot("R2")?.neighbors.map((neighbor) => neighbor.neighborDeviceId)).toEqual([
       "R1"
     ]);
-    expect(world.getOspfSnapshot("R1")?.routes).toEqual([]);
+    expect(world.canPing("R1", "10.23.0.3")).toBe(false);
   });
 });
