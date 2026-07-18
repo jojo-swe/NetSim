@@ -57,12 +57,26 @@ export interface StaticRouteConfig {
   nextHop: string;
 }
 
+export interface OspfNetworkConfig {
+  network: string;
+  wildcard: string;
+  area: number;
+}
+
+export interface OspfConfig {
+  enabled: boolean;
+  processId: number;
+  routerId?: string;
+  networks: OspfNetworkConfig[];
+}
+
 export interface InterfaceConfig {
   name: InterfaceName;
   description?: string;
   adminUp: boolean;
   ipv4Address?: string;
   ipv4Mask?: string;
+  ospfCost?: number;
 }
 
 export interface DeviceConfig {
@@ -70,6 +84,7 @@ export interface DeviceConfig {
   interfaces: Record<InterfaceName, InterfaceConfig>;
   staticRoutes: StaticRouteConfig[];
   defaultGateway?: string;
+  ospf?: OspfConfig;
 }
 
 export interface Device {
