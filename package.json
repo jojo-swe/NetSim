@@ -9,6 +9,7 @@
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "dev:api": "npm run dev -w apps/api",
     "dev:web": "npm run dev -w apps/web",
+    "lab:check": "npm run lab:check -w apps/api --",
     "regress:next-hop": "npm run regress:next-hop -w apps/api",
     "regress:cables": "npm run regress:cables -w apps/api",
     "test": "npm run test -w @netsim/shared && npm run test -w apps/api && npm run test -w apps/web",
