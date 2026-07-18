@@ -1,0 +1,55 @@
+{
+  "name": "Basic router connectivity",
+  "description": "Verify that a client can reach its directly connected default gateway.",
+  "topology": {
+    "devices": [
+      {
+        "id": "R1",
+        "type": "router",
+        "config": {
+          "hostname": "edge-r1",
+          "staticRoutes": [],
+          "interfaces": {
+            "GigabitEthernet0/0": {
+              "name": "GigabitEthernet0/0",
+              "adminUp": true,
+              "ipv4Address": "10.0.0.1",
+              "ipv4Mask": "255.255.255.0"
+            }
+          }
+        }
+      },
+      {
+        "id": "PC1",
+        "type": "pc",
+        "config": {
+          "hostname": "client-1",
+          "defaultGateway": "10.0.0.1",
+          "staticRoutes": [],
+          "interfaces": {
+            "GigabitEthernet0/0": {
+              "name": "GigabitEthernet0/0",
+              "adminUp": true,
+              "ipv4Address": "10.0.0.10",
+              "ipv4Mask": "255.255.255.0"
+            }
+          }
+        }
+      }
+    ],
+    "links": [
+      {
+        "id": "lan-1",
+        "a": { "deviceId": "R1", "interfaceName": "GigabitEthernet0/0" },
+        "b": { "deviceId": "PC1", "interfaceName": "GigabitEthernet0/0" },
+        "cableType": "copper_straight"
+      }
+    ]
+  },
+  "assertions": [
+    { "type": "deviceExists", "deviceId": "R1" },
+    { "type": "hostname", "deviceId": "R1", "expected": "edge-r1" },
+    { "type": "interfaceUp", "deviceId": "R1", "interfaceName": "GigabitEthernet0/0" },
+    { "type": "ping", "from": "PC1", "targetIp": "10.0.0.1" }
+  ]
+}
