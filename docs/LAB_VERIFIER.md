@@ -6,6 +6,7 @@ NetSim labs can be checked non-interactively from JSON. This makes topologies us
 
 ```bash
 npm install
+npm run build -w @netsim/shared
 npm run lab:check -- examples/basic-connectivity.lab.json
 ```
 
@@ -63,11 +64,28 @@ Checks operational interface state. Set `expected` to `false` for negative tests
 
 Runs the simulator's real reachability engine, including forwarding and return-path logic. Set `expected` to `false` to verify intentional isolation.
 
+### `ospfNeighbor`
+
+Checks the OSPF adjacency state that `deviceId` has with `neighborDeviceId`. `state` defaults to `"full"`; a missing adjacency reports `down`.
+
+```json
+{ "type": "ospfNeighbor", "deviceId": "R2", "neighborDeviceId": "R1" }
+```
+
+## Examples
+
+- `examples/basic-connectivity.lab.json` — a PC reaching its default gateway.
+- `examples/ospf-three-routers.lab.json` — R1–R2–R3 running single-area OSPF via `config.ospf`; grades adjacencies, end-to-end reachability, and an unreachable prefix.
+
 ## CI example
 
 ```yaml
 - name: Verify networking lab
-  run: npm run lab:check -- examples/basic-connectivity.lab.json
+  run: |
+    npm run lab:check -- examples/basic-connectivity.lab.json
+    npm run lab:check -- examples/ospf-three-routers.lab.json
 ```
+
+Paths are resolved from the directory you run `npm` in.
 
 A broken route, disabled interface, missing device, or unexpected reachability condition will fail the workflow with an actionable message.
