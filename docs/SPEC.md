@@ -14,6 +14,7 @@ Legend:
 - `[CCNP]` CCNP-focused scope
 - `[DC]` data center / advanced scope
 - `[PLAT]` platform / UX / tooling
+- `(done)` implemented and covered by tests
 
 ## Feature list (220+)
 
@@ -198,8 +199,8 @@ Legend:
 
 ### OSPF
 
-- **F-159** [CCNA] OSPFv2 single-area (`router ospf <pid>`).
-- **F-160** [CCNA] `network <ip> <wildcard> area <n>`.
+- **F-159** [CCNA] OSPFv2 single-area (`router ospf <pid>`). (done)
+- **F-160** [CCNA] `network <ip> <wildcard> area <n>`. (done)
 - **F-161** [CCNA] Passive interfaces.
 - **F-162** [CCNA] Neighbor adjacencies.
 - **F-163** [CCNA] DR/BDR on broadcast networks.
@@ -207,7 +208,7 @@ Legend:
 - **F-165** [CCNP] Multi-area OSPF.
 - **F-166** [CCNP] OSPF stub/NSSA.
 - **F-167** [CCNP] OSPF authentication.
-- **F-168** [CCNA] `show ip ospf neighbor`.
+- **F-168** [CCNA] `show ip ospf neighbor`. (done)
 - **F-169** [CCNA] `show ip ospf interface`.
 
 ### BGP
