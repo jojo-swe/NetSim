@@ -40,4 +40,6 @@ jobs:
         run: npm run test -w apps/web
 
       - name: Verify example labs
-        run: npm run lab:check -- examples/basic-connectivity.lab.json
+        run: |
+          npm run lab:check -- examples/basic-connectivity.lab.json
+          npm run lab:check -- examples/ospf-three-routers.lab.json
