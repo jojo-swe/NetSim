@@ -16,6 +16,8 @@ export type OspfNeighbor = {
   localInterface: string;
   neighborDeviceId: string;
   neighborInterface: string;
+  neighborRouterId: string;
+  neighborAddress: string;
   area: number;
   cost: number;
   state: OspfNeighborState;
@@ -206,6 +208,8 @@ export class OspfEngine {
         localInterface: a.interfaceName,
         neighborDeviceId: b.deviceId,
         neighborInterface: b.interfaceName,
+        neighborRouterId: b.routerId,
+        neighborAddress: b.address,
         area: a.area,
         cost: a.cost,
         state: "full"
@@ -215,6 +219,8 @@ export class OspfEngine {
         localInterface: b.interfaceName,
         neighborDeviceId: a.deviceId,
         neighborInterface: a.interfaceName,
+        neighborRouterId: a.routerId,
+        neighborAddress: a.address,
         area: b.area,
         cost: b.cost,
         state: "full"

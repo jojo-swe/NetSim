@@ -4,10 +4,15 @@ import {
   networkAddress,
   maskToPrefixLen,
   type Device,
+  type OspfConfig,
   type StaticRouteConfig
 } from "@netsim/shared";
 
+import type { OspfSnapshot } from "../sim/ospf.js";
+
 type WorldLike = {
+  configureOspf(deviceId: string, config: OspfConfig | undefined): void;
+  getOspfSnapshot(deviceId: string): OspfSnapshot | null;
   isInterfaceOperUp(deviceId: string, interfaceName: string): boolean;
   canPing(fromDeviceId: string, targetIp: string): boolean;
   traceRoute(fromDeviceId: string, targetIp: string): { ok: boolean; hops: string[] };
@@ -16,7 +21,7 @@ type WorldLike = {
   ): Array<{ ip: string; mac: string; interfaceName: string; ageMinutes: number }>;
 };
 
-export type CliMode = "user" | "priv" | "config" | "config-if";
+export type CliMode = "user" | "priv" | "config" | "config-if" | "config-router";
 
 export interface CliContext {
   interfaceName?: string;
@@ -59,7 +64,13 @@ function modeSuffix(mode: CliMode, ctx: CliContext): string {
       return "(config)#";
     case "config-if":
       return `(config-if)#`;
+    case "config-router":
+      return "(config-router)#";
   }
+}
+
+function isUint(value: string | undefined): value is string {
+  return value !== undefined && /^\d+$/.test(value);
 }
 
 function buildPrompt(device: Device, mode: CliMode, ctx: CliContext): string {
@@ -171,6 +182,9 @@ export class CliSession {
       if (lower === "show ip route") {
         return { output: this.showIpRoute(), prompt: this.getPrompt() };
       }
+      if (lower === "show ip ospf neighbor") {
+        return { output: this.showIpOspfNeighbor(), prompt: this.getPrompt() };
+      }
       if (lower === "show arp" || lower === "show ip arp") {
         return { output: this.showArp(), prompt: this.getPrompt() };
       }
@@ -269,6 +283,92 @@ export class CliSession {
         return { output: "", prompt: this.getPrompt() };
       }
 
+      if (/^(no )?router ospf( |$)/.test(lower)) {
+        const negate = lower.startsWith("no ");
+        const parts = lower.split(" ");
+        const pid = parts[negate ? 3 : 2];
+        if (pid === undefined) {
+          return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+        }
+        if (!isUint(pid) || Number(pid) < 1 || Number(pid) > 65535 || parts.length > (negate ? 4 : 3)) {
+          return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+        }
+        const current = this.device.config.ospf;
+        if (negate) {
+          if (current?.processId === Number(pid)) this.setOspf(undefined);
+          return { output: "", prompt: this.getPrompt() };
+        }
+        // Single OSPF process per device: re-entering with another pid renumbers it.
+        const next: OspfConfig = current
+          ? { ...current, enabled: true, processId: Number(pid) }
+          : { enabled: true, processId: Number(pid), networks: [] };
+        if (!this.setOspf(next)) {
+          return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+        }
+        this.mode = "config-router";
+        return { output: "", prompt: this.getPrompt() };
+      }
+
+      return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+    }
+
+    if (this.mode === "config-router") {
+      const ospf = this.device.config.ospf;
+      if (!ospf) {
+        this.mode = "config";
+        return { output: "% Internal error: router context lost.\n", prompt: this.getPrompt() };
+      }
+
+      if (lower === "exit") {
+        this.mode = "config";
+        return { output: "", prompt: this.getPrompt() };
+      }
+      if (lower === "end") {
+        this.mode = "priv";
+        return { output: "", prompt: this.getPrompt() };
+      }
+      if (lower === "router-id") {
+        return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+      }
+      if (lower.startsWith("router-id ")) {
+        const routerId = line.substring("router-id ".length).trim();
+        if (ipv4ToInt(routerId) === null) {
+          return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+        }
+        this.setOspf({ ...ospf, routerId });
+        return { output: "", prompt: this.getPrompt() };
+      }
+      if (lower === "no router-id") {
+        this.setOspf({ ...ospf, routerId: undefined });
+        return { output: "", prompt: this.getPrompt() };
+      }
+      if (/^(no )?network( |$)/.test(lower)) {
+        const negate = lower.startsWith("no ");
+        const [network, wildcard, areaKeyword, area, ...extra] = lower.split(" ").slice(negate ? 2 : 1);
+        if (!network || !wildcard || !areaKeyword || !area) {
+          return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+        }
+        if (
+          ipv4ToInt(network) === null ||
+          ipv4ToInt(wildcard) === null ||
+          areaKeyword !== "area" ||
+          !isUint(area) ||
+          extra.length > 0
+        ) {
+          return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+        }
+        const same = (n: OspfConfig["networks"][number]) =>
+          n.network === network && n.wildcard === wildcard && n.area === Number(area);
+        const exists = ospf.networks.some(same);
+        const networks = negate
+          ? ospf.networks.filter((n) => !same(n))
+          : exists
+            ? ospf.networks
+            : [...ospf.networks, { network, wildcard, area: Number(area) }];
+        this.setOspf({ ...ospf, networks });
+        return { output: "", prompt: this.getPrompt() };
+      }
+
       return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
     }
 
@@ -309,11 +409,36 @@ export class CliSession {
         iface.ipv4Mask = mask;
         return { output: "", prompt: this.getPrompt() };
       }
+      if (lower === "ip ospf cost") {
+        return { output: "% Incomplete command.\n", prompt: this.getPrompt() };
+      }
+      if (lower.startsWith("ip ospf cost ")) {
+        const cost = lower.substring("ip ospf cost ".length);
+        if (!isUint(cost) || Number(cost) < 1 || Number(cost) > 65535) {
+          return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+        }
+        iface.ospfCost = Number(cost);
+        return { output: "", prompt: this.getPrompt() };
+      }
+      if (lower === "no ip ospf cost") {
+        delete iface.ospfCost;
+        return { output: "", prompt: this.getPrompt() };
+      }
 
       return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
     }
 
     return { output: "% Invalid input detected at '^' marker.\n", prompt: this.getPrompt() };
+  }
+
+  private setOspf(config: OspfConfig | undefined): boolean {
+    try {
+      if (this.world) this.world.configureOspf(this.device.id, config);
+      else this.device.config.ospf = config;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private completionCandidates(tokens: string[]): string[] {
@@ -328,16 +453,19 @@ export class CliSession {
       if (t.length === 0) return ["disable", "configure", "show", "ping", "traceroute", "trace", "exit"];
       if (t.length === 1 && t[0] === "configure") return ["terminal"];
       if (t.length === 1 && t[0] === "show") return ["running-config", "ip", "arp"];
-      if (t.length === 2 && t[0] === "show" && t[1] === "ip") return ["interface", "route", "arp"];
+      if (t.length === 2 && t[0] === "show" && t[1] === "ip") return ["interface", "route", "arp", "ospf"];
       if (t.length === 3 && t[0] === "show" && t[1] === "ip" && t[2] === "interface") return ["brief"];
+      if (t.length === 3 && t[0] === "show" && t[1] === "ip" && t[2] === "ospf") return ["neighbor"];
       return [];
     }
 
     if (this.mode === "config") {
-      if (t.length === 0) return ["end", "exit", "hostname", "interface", "ip", "no"];
+      if (t.length === 0) return ["end", "exit", "hostname", "interface", "ip", "no", "router"];
       if (t.length === 1 && t[0] === "ip") return ["route", "default-gateway"];
-      if (t.length === 1 && t[0] === "no") return ["ip"];
+      if (t.length === 1 && t[0] === "no") return ["ip", "router"];
       if (t.length === 2 && t[0] === "no" && t[1] === "ip") return ["route", "default-gateway"];
+      if (t.length === 1 && t[0] === "router") return ["ospf"];
+      if (t.length === 2 && t[0] === "no" && t[1] === "router") return ["ospf"];
       if (t.length === 1 && t[0] === "interface") {
         return Object.keys(this.device.config.interfaces);
       }
@@ -346,8 +474,19 @@ export class CliSession {
 
     if (this.mode === "config-if") {
       if (t.length === 0) return ["exit", "end", "shutdown", "no", "ip"];
-      if (t.length === 1 && t[0] === "no") return ["shutdown"];
-      if (t.length === 1 && t[0] === "ip") return ["address"];
+      if (t.length === 1 && t[0] === "no") return ["shutdown", "ip"];
+      if (t.length === 1 && t[0] === "ip") return ["address", "ospf"];
+      if (t.length === 2 && t[0] === "no" && t[1] === "ip") return ["ospf"];
+      if (t.length === 2 && t[0] === "ip" && t[1] === "ospf") return ["cost"];
+      if (t.length === 3 && t[0] === "no" && t[1] === "ip" && t[2] === "ospf") return ["cost"];
+      return [];
+    }
+
+    if (this.mode === "config-router") {
+      if (t.length === 0) return ["exit", "end", "network", "no", "router-id"];
+      if (t.length === 1 && t[0] === "no") return ["network", "router-id"];
+      if (t.length === 3 && t[0] === "network") return ["area"];
+      if (t.length === 4 && t[0] === "no" && t[1] === "network") return ["area"];
       return [];
     }
 
@@ -368,8 +507,21 @@ export class CliSession {
       if (iface.ipv4Address && iface.ipv4Mask) {
         lines.push(` ip address ${iface.ipv4Address} ${iface.ipv4Mask}`);
       }
+      if (iface.ospfCost !== undefined) {
+        lines.push(` ip ospf cost ${iface.ospfCost}`);
+      }
       if (!iface.adminUp) {
         lines.push(" shutdown");
+      }
+      lines.push("!");
+    }
+
+    const ospf = this.device.config.ospf;
+    if (ospf?.enabled) {
+      lines.push(`router ospf ${ospf.processId}`);
+      if (ospf.routerId) lines.push(` router-id ${ospf.routerId}`);
+      for (const n of ospf.networks) {
+        lines.push(` network ${n.network} ${n.wildcard} area ${n.area}`);
       }
       lines.push("!");
     }
@@ -388,6 +540,19 @@ export class CliSession {
 
     lines.push("end\n");
     return lines.join("\n") + "\n";
+  }
+
+  private showIpOspfNeighbor(): string {
+    const header = "Neighbor ID     Pri   State           Address         Interface\n";
+    const neighbors = [...(this.world?.getOspfSnapshot(this.device.id)?.neighbors ?? [])].sort(
+      (a, b) => (ipv4ToInt(a.neighborRouterId) ?? 0) - (ipv4ToInt(b.neighborRouterId) ?? 0)
+    );
+    const rows = neighbors.map(
+      (n) =>
+        `${n.neighborRouterId.padEnd(16)}${"1".padEnd(6)}${`${n.state.toUpperCase()}/  -`.padEnd(16)}` +
+        `${n.neighborAddress.padEnd(16)}${n.localInterface}\n`
+    );
+    return header + rows.join("");
   }
 
   private showArp(): string {
@@ -428,7 +593,7 @@ export class CliSession {
 
   private showIpRoute(): string {
     const lines: string[] = [];
-    lines.push("Codes: C - connected, S - static");
+    lines.push("Codes: C - connected, S - static, O - OSPF");
     lines.push("");
 
     const defaultGateway = this.device.config.defaultGateway;
@@ -469,6 +634,7 @@ export class CliSession {
     }
 
     const staticRoutes = Array.isArray((this.device.config as any).staticRoutes) ? this.device.config.staticRoutes : [];
+    const staticPrefixes = new Set<string>();
     for (const route of staticRoutes) {
       if (ipv4ToInt(route.destination) === null) continue;
       if (ipv4ToInt(route.mask) === null) continue;
@@ -485,7 +651,15 @@ export class CliSession {
       });
 
       if (!nextHopReachable) continue;
+      staticPrefixes.add(`${route.destination}/${prefixLen}`);
       lines.push(`S    ${route.destination}/${prefixLen} [1/0] via ${route.nextHop}`);
+    }
+
+    // Static (AD 1) beats OSPF (AD 110) for the same prefix.
+    for (const route of this.world?.getOspfSnapshot(this.device.id)?.routes ?? []) {
+      const prefix = `${route.destination}/${maskToPrefixLen(route.mask)}`;
+      if (staticPrefixes.has(prefix)) continue;
+      lines.push(`O    ${prefix} [110/${route.metric}] via ${route.nextHop}, ${route.outgoingInterface}`);
     }
 
     if (dgReachable) {
