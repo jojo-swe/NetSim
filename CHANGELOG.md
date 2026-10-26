@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **OSPF CLI**: `router ospf <pid>` / `no router ospf <pid>` with a `config-router` mode (`router-id`, `network … area`, `no network`), `ip ospf cost` on interfaces, `show ip ospf neighbor`, `O` routes in `show ip route`, and the OSPF block in `show running-config`
+- **Lab verifier `ospfNeighbor` assertion** and `examples/ospf-three-routers.lab.json`, both verified in CI
+- **AGENTS.md**: build order, layout, and code conventions
 - **Shared types package** (`@netsim/shared`): centralized `types.ts`, `ipUtils.ts`, `devicePorts.ts` shared across API and web
 - **Modular simulation engine**: `world.ts` split into `arp.ts`, `l2.ts`, `routing.ts`, `mac.ts`, `eventBus.ts` with `world.ts` as slim facade
 - **Vitest test framework**: configured in `packages/shared`, `apps/api`, and `apps/web` with per-package configs
@@ -34,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CLI `ping` output formatting
 - Lab load edge/link ID drift by rehydrating edges from backend links after snapshot import
 - Lab load without a snapshot now recreates backend devices/links before rehydrating edges
+- Fresh clones failed type-checks because committed `tsconfig.tsbuildinfo` files suppressed `@netsim/shared` declaration output; they are no longer tracked
+- `npm ci` failed on Linux because a Windows-only Rollup binary was a regular devDependency; it is now optional
+- `npm run lab:check` resolved relative paths from `apps/api` instead of the invoking directory
+- Docker images now install and build `@netsim/shared`
 
 ## [0.1.0] - 2025-12-12
 
