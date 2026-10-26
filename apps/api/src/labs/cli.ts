@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import process from "node:process";
 
 import { runLab, type LabDefinition } from "./runner.js";
@@ -23,7 +24,9 @@ async function main(): Promise<number> {
   }
 
   try {
-    const definition = JSON.parse(await readFile(file, "utf8")) as LabDefinition;
+    // npm workspaces run this with cwd apps/api; resolve against the caller's directory.
+    const path = resolve(process.env.INIT_CWD ?? process.cwd(), file);
+    const definition = JSON.parse(await readFile(path, "utf8")) as LabDefinition;
     const result = runLab(definition);
 
     if (json) console.log(JSON.stringify(result, null, 2));
