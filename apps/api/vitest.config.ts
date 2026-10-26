@@ -6,7 +6,7 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "src/regression/*.ts"],
     coverage: {
       provider: "v8",
-      include: ["src/sim/**", "src/cli/**"],
+      include: ["src/sim/**", "src/cli/**", "src/labs/**"],
       exclude: ["src/regression/**", "**/*.test.ts"],
     },
   },

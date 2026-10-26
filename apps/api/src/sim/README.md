@@ -16,7 +16,8 @@ Modular simulation engine for NetSim's network world state.
 
 Regression tests live in `apps/api/src/regression/`:
 
-- `nextHopReachability.ts` — verifies routing table next-hop selection (5 tests)
-- `cableCompatibility.ts` — verifies cable type compatibility rules (6 tests)
+- `nextHopReachability.ts` — verifies routing table next-hop selection
+- `cableCompatibility.ts` — verifies cable type compatibility rules
+- `ospf.test.ts` — verifies OSPF adjacency, SPF and route installation
 
 Run: `npx vitest run` from `apps/api/`
