@@ -77,6 +77,23 @@ describe("runLab", () => {
     expect(result.results[0]?.message).toContain("got edge-r1");
   });
 
+  it("grades OSPF adjacencies in the example lab", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lab = JSON.parse(
+      await readFile(new URL("../../../../examples/ospf-three-routers.lab.json", import.meta.url), "utf8")
+    ) as LabDefinition;
+
+    expect(runLab(lab).passed).toBe(true);
+
+    const r2 = lab.topology.devices.find((device) => device.id === "R2");
+    delete r2?.config.ospf;
+    const broken = runLab(lab);
+    expect(broken.passed).toBe(false);
+    expect(broken.results.find((r) => r.assertion.type === "ospfNeighbor")?.message).toBe(
+      "R2 OSPF neighbor R1 expected full, got down"
+    );
+  });
+
   it("supports negative reachability assertions", () => {
     const result = runLab({
       ...baseLab,

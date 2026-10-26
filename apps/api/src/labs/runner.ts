@@ -1,12 +1,14 @@
 import type { Device, Link } from "@netsim/shared";
 
+import type { OspfNeighborState } from "../sim/ospf.js";
 import { World } from "../sim/world.js";
 
 export type LabAssertion =
   | { type: "deviceExists"; deviceId: string }
   | { type: "hostname"; deviceId: string; expected: string }
   | { type: "interfaceUp"; deviceId: string; interfaceName: string; expected?: boolean }
-  | { type: "ping"; from: string; targetIp: string; expected?: boolean };
+  | { type: "ping"; from: string; targetIp: string; expected?: boolean }
+  | { type: "ospfNeighbor"; deviceId: string; neighborDeviceId: string; state?: OspfNeighborState };
 
 export interface LabDefinition {
   name: string;
@@ -76,6 +78,19 @@ function evaluateAssertion(world: World, assertion: LabAssertion): AssertionResu
         assertion,
         passed,
         message: `${assertion.from} -> ${assertion.targetIp} expected ${expected ? "reachable" : "unreachable"}, got ${actual ? "reachable" : "unreachable"}`
+      };
+    }
+
+    case "ospfNeighbor": {
+      const expected = assertion.state ?? "full";
+      const actual =
+        world
+          .getOspfSnapshot(assertion.deviceId)
+          ?.neighbors.find((neighbor) => neighbor.neighborDeviceId === assertion.neighborDeviceId)?.state ?? "down";
+      return {
+        assertion,
+        passed: actual === expected,
+        message: `${assertion.deviceId} OSPF neighbor ${assertion.neighborDeviceId} expected ${expected}, got ${actual}`
       };
     }
   }

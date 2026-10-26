@@ -1,0 +1,109 @@
+{
+  "name": "OSPF three-router line",
+  "description": "Verify that single-area OSPF forms adjacencies along R1-R2-R3 and makes the far subnet reachable.",
+  "topology": {
+    "devices": [
+      {
+        "id": "R1",
+        "type": "router",
+        "config": {
+          "hostname": "R1",
+          "staticRoutes": [],
+          "ospf": {
+            "enabled": true,
+            "processId": 1,
+            "routerId": "1.1.1.1",
+            "networks": [{ "network": "10.0.0.0", "wildcard": "0.255.255.255", "area": 0 }]
+          },
+          "interfaces": {
+            "GigabitEthernet0/0": {
+              "name": "GigabitEthernet0/0",
+              "adminUp": true,
+              "ipv4Address": "10.12.0.1",
+              "ipv4Mask": "255.255.255.252",
+              "ospfCost": 10
+            }
+          }
+        }
+      },
+      {
+        "id": "R2",
+        "type": "router",
+        "config": {
+          "hostname": "R2",
+          "staticRoutes": [],
+          "ospf": {
+            "enabled": true,
+            "processId": 1,
+            "routerId": "2.2.2.2",
+            "networks": [{ "network": "10.0.0.0", "wildcard": "0.255.255.255", "area": 0 }]
+          },
+          "interfaces": {
+            "GigabitEthernet0/0": {
+              "name": "GigabitEthernet0/0",
+              "adminUp": true,
+              "ipv4Address": "10.12.0.2",
+              "ipv4Mask": "255.255.255.252",
+              "ospfCost": 10
+            },
+            "GigabitEthernet0/1": {
+              "name": "GigabitEthernet0/1",
+              "adminUp": true,
+              "ipv4Address": "10.23.0.2",
+              "ipv4Mask": "255.255.255.252",
+              "ospfCost": 10
+            }
+          }
+        }
+      },
+      {
+        "id": "R3",
+        "type": "router",
+        "config": {
+          "hostname": "R3",
+          "staticRoutes": [],
+          "ospf": {
+            "enabled": true,
+            "processId": 1,
+            "routerId": "3.3.3.3",
+            "networks": [{ "network": "10.0.0.0", "wildcard": "0.255.255.255", "area": 0 }]
+          },
+          "interfaces": {
+            "GigabitEthernet0/0": {
+              "name": "GigabitEthernet0/0",
+              "adminUp": true,
+              "ipv4Address": "10.23.0.3",
+              "ipv4Mask": "255.255.255.252",
+              "ospfCost": 10
+            }
+          }
+        }
+      }
+    ],
+    "links": [
+      {
+        "id": "R1-R2",
+        "a": { "deviceId": "R1", "interfaceName": "GigabitEthernet0/0" },
+        "b": { "deviceId": "R2", "interfaceName": "GigabitEthernet0/0" },
+        "cableType": "copper_crossover"
+      },
+      {
+        "id": "R2-R3",
+        "a": { "deviceId": "R2", "interfaceName": "GigabitEthernet0/1" },
+        "b": { "deviceId": "R3", "interfaceName": "GigabitEthernet0/0" },
+        "cableType": "copper_crossover"
+      }
+    ]
+  },
+  "assertions": [
+    { "type": "interfaceUp", "deviceId": "R1", "interfaceName": "GigabitEthernet0/0" },
+    { "type": "interfaceUp", "deviceId": "R2", "interfaceName": "GigabitEthernet0/0" },
+    { "type": "interfaceUp", "deviceId": "R2", "interfaceName": "GigabitEthernet0/1" },
+    { "type": "interfaceUp", "deviceId": "R3", "interfaceName": "GigabitEthernet0/0" },
+    { "type": "ospfNeighbor", "deviceId": "R2", "neighborDeviceId": "R1" },
+    { "type": "ospfNeighbor", "deviceId": "R2", "neighborDeviceId": "R3" },
+    { "type": "ping", "from": "R1", "targetIp": "10.23.0.3" },
+    { "type": "ping", "from": "R3", "targetIp": "10.12.0.1" },
+    { "type": "ping", "from": "R1", "targetIp": "10.99.0.1", "expected": false }
+  ]
+}
