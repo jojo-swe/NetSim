@@ -55,72 +55,72 @@ export function validatePc001(world: World): LabValidationResult {
     hint: r1 && pc1 && pc2 ? undefined : "Add one router (R1) and two PCs (PC1, PC2)."
   });
 
-  const r1LanA = hasIpv4Interface(world, "R1", "192.168.10.1", "255.255.255.0");
+  const r1LanA = hasIpv4Interface(world, "R1", "192.0.2.1", "255.255.255.0");
   objectives.push({
     id: "r1-lan-a",
-    title: "Configure 192.168.10.1/24 on R1 and ensure link is up",
+    title: "Configure 192.0.2.1/24 on R1 and ensure link is up",
     passed: r1LanA.ok,
     hint: r1LanA.ok
       ? undefined
-      : "On R1: conf t -> interface g0/0 (connected toward PC1) -> ip address 192.168.10.1 255.255.255.0 -> no shutdown",
+      : "On R1: conf t -> interface g0/0 (connected toward PC1) -> ip address 192.0.2.1 255.255.255.0 -> no shutdown",
     details: r1LanA.ok ? undefined : r1LanA.reason
   });
 
-  const r1LanB = hasIpv4Interface(world, "R1", "192.168.20.1", "255.255.255.0");
+  const r1LanB = hasIpv4Interface(world, "R1", "198.51.100.1", "255.255.255.0");
   objectives.push({
     id: "r1-lan-b",
-    title: "Configure 192.168.20.1/24 on R1 and ensure link is up",
+    title: "Configure 198.51.100.1/24 on R1 and ensure link is up",
     passed: r1LanB.ok,
     hint: r1LanB.ok
       ? undefined
-      : "On R1: conf t -> interface g0/1 (connected toward PC2) -> ip address 192.168.20.1 255.255.255.0 -> no shutdown",
+      : "On R1: conf t -> interface g0/1 (connected toward PC2) -> ip address 198.51.100.1 255.255.255.0 -> no shutdown",
     details: r1LanB.ok ? undefined : r1LanB.reason
   });
 
-  const pc1If = hasIpv4Interface(world, "PC1", "192.168.10.10", "255.255.255.0");
+  const pc1If = hasIpv4Interface(world, "PC1", "192.0.2.10", "255.255.255.0");
   objectives.push({
     id: "pc1-ip",
-    title: "Configure 192.168.10.10/24 on PC1 and ensure link is up",
+    title: "Configure 192.0.2.10/24 on PC1 and ensure link is up",
     passed: pc1If.ok,
     hint: pc1If.ok
       ? undefined
-      : "On PC1: use Ports panel IPv4 editor or run 'ip addr add 192.168.10.10/24 dev eth0'",
+      : "On PC1: use Ports panel IPv4 editor or run 'ip addr add 192.0.2.10/24 dev eth0'",
     details: pc1If.ok ? undefined : pc1If.reason
   });
 
-  const pc2If = hasIpv4Interface(world, "PC2", "192.168.20.20", "255.255.255.0");
+  const pc2If = hasIpv4Interface(world, "PC2", "198.51.100.20", "255.255.255.0");
   objectives.push({
     id: "pc2-ip",
-    title: "Configure 192.168.20.20/24 on PC2 and ensure link is up",
+    title: "Configure 198.51.100.20/24 on PC2 and ensure link is up",
     passed: pc2If.ok,
     hint: pc2If.ok
       ? undefined
-      : "On PC2: use Ports panel IPv4 editor or run 'ip addr add 192.168.20.20/24 dev eth0'",
+      : "On PC2: use Ports panel IPv4 editor or run 'ip addr add 198.51.100.20/24 dev eth0'",
     details: pc2If.ok ? undefined : pc2If.reason
   });
 
-  const pc1Gw = hasDefaultGateway(world, "PC1", "192.168.10.1");
+  const pc1Gw = hasDefaultGateway(world, "PC1", "192.0.2.1");
   objectives.push({
     id: "pc1-gw",
-    title: "Set default gateway on PC1 to 192.168.10.1",
+    title: "Set default gateway on PC1 to 192.0.2.1",
     passed: pc1Gw.ok,
-    hint: pc1Gw.ok ? undefined : "On PC1: 'ip route add default via 192.168.10.1'",
+    hint: pc1Gw.ok ? undefined : "On PC1: 'ip route add default via 192.0.2.1'",
     details: pc1Gw.ok ? undefined : pc1Gw.reason
   });
 
-  const pc2Gw = hasDefaultGateway(world, "PC2", "192.168.20.1");
+  const pc2Gw = hasDefaultGateway(world, "PC2", "198.51.100.1");
   objectives.push({
     id: "pc2-gw",
-    title: "Set default gateway on PC2 to 192.168.20.1",
+    title: "Set default gateway on PC2 to 198.51.100.1",
     passed: pc2Gw.ok,
-    hint: pc2Gw.ok ? undefined : "On PC2: 'ip route add default via 192.168.20.1'",
+    hint: pc2Gw.ok ? undefined : "On PC2: 'ip route add default via 198.51.100.1'",
     details: pc2Gw.ok ? undefined : pc2Gw.reason
   });
 
-  const pingOk = world.canPing("PC1", "192.168.20.20");
+  const pingOk = world.canPing("PC1", "198.51.100.20");
   objectives.push({
     id: "ping",
-    title: "Ping from PC1 to 192.168.20.20 succeeds",
+    title: "Ping from PC1 to 198.51.100.20 succeeds",
     passed: pingOk,
     hint: pingOk
       ? undefined

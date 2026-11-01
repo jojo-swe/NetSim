@@ -27,7 +27,7 @@ function enableOspf(world: World, deviceId: string, routerId: string, area = 0):
     enabled: true,
     processId: 1,
     routerId,
-    networks: [{ network: "10.0.0.0", wildcard: "0.255.255.255", area }]
+    networks: [{ network: "192.0.2.0", wildcard: "0.255.255.255", area }]
   });
 }
 
@@ -37,10 +37,10 @@ function buildThreeRouterLine(): World {
   world.createDevice({ id: "R2", type: "router", hostname: "R2" });
   world.createDevice({ id: "R3", type: "router", hostname: "R3" });
 
-  configureInterface(world, "R1", "GigabitEthernet0/0", "10.12.0.1");
-  configureInterface(world, "R2", "GigabitEthernet0/0", "10.12.0.2");
-  configureInterface(world, "R2", "GigabitEthernet0/1", "10.23.0.2");
-  configureInterface(world, "R3", "GigabitEthernet0/0", "10.23.0.3");
+  configureInterface(world, "R1", "GigabitEthernet0/0", "192.0.2.1");
+  configureInterface(world, "R2", "GigabitEthernet0/0", "192.0.2.2");
+  configureInterface(world, "R2", "GigabitEthernet0/1", "192.0.2.5");
+  configureInterface(world, "R3", "GigabitEthernet0/0", "192.0.2.6");
 
   world.createLink({
     id: "R1-R2",
@@ -90,7 +90,7 @@ function configureViaCli(
     ]),
     "router ospf 1",
     `router-id ${routerId}`,
-    "network 10.0.0.0 0.255.255.255 area 0",
+    "network 192.0.2.0 0.255.255.255 area 0",
     "end"
   ]);
   expect(output).not.toContain("%");
@@ -115,12 +115,12 @@ function buildThreeRouterLineViaCli(): { world: World; r1: CliSession; r2: CliSe
     cableType: "copper_crossover"
   });
 
-  const r1 = configureViaCli(world, "R1", "1.1.1.1", [["g0/0", "10.12.0.1"]]);
+  const r1 = configureViaCli(world, "R1", "1.1.1.1", [["g0/0", "192.0.2.1"]]);
   const r2 = configureViaCli(world, "R2", "2.2.2.2", [
-    ["g0/0", "10.12.0.2"],
-    ["g0/1", "10.23.0.2"]
+    ["g0/0", "192.0.2.2"],
+    ["g0/1", "192.0.2.5"]
   ]);
-  configureViaCli(world, "R3", "3.3.3.3", [["g0/0", "10.23.0.3"]]);
+  configureViaCli(world, "R3", "3.3.3.3", [["g0/0", "192.0.2.6"]]);
   return { world, r1, r2 };
 }
 
@@ -131,14 +131,14 @@ describe("OSPF IOS CLI", () => {
     const neighbors = r2.executeLine("show ip ospf neighbor").output.trimEnd().split("\n");
     expect(neighbors).toEqual([
       "Neighbor ID     Pri   State           Address         Interface",
-      "1.1.1.1         1     FULL/  -        10.12.0.1       GigabitEthernet0/0",
-      "3.3.3.3         1     FULL/  -        10.23.0.3       GigabitEthernet0/1"
+      "1.1.1.1         1     FULL/  -        192.0.2.1       GigabitEthernet0/0",
+      "3.3.3.3         1     FULL/  -        192.0.2.6       GigabitEthernet0/1"
     ]);
 
     const routes = r1.executeLine("show ip route").output;
     expect(routes).toContain("Codes: C - connected, S - static, O - OSPF");
-    expect(routes).toContain("O    10.23.0.0/30 [110/20] via 10.12.0.2, GigabitEthernet0/0");
-    expect(world.canPing("R1", "10.23.0.3")).toBe(true);
+    expect(routes).toContain("O    192.0.2.4/30 [110/20] via 192.0.2.2, GigabitEthernet0/0");
+    expect(world.canPing("R1", "192.0.2.6")).toBe(true);
   });
 
   it("renders the OSPF block in running-config", () => {
@@ -146,7 +146,7 @@ describe("OSPF IOS CLI", () => {
     const config = r1.executeLine("show running-config").output;
 
     expect(config).toContain(" ip ospf cost 10\n");
-    expect(config).toContain("router ospf 1\n router-id 1.1.1.1\n network 10.0.0.0 0.255.255.255 area 0\n!");
+    expect(config).toContain("router ospf 1\n router-id 1.1.1.1\n network 192.0.2.0 0.255.255.255 area 0\n!");
   });
 
   it("enters config-router mode and rejects malformed input", () => {
@@ -157,8 +157,8 @@ describe("OSPF IOS CLI", () => {
     expect(r1.executeLine("router ospf 0").output).toContain("% Invalid input");
     expect(r1.executeLine("router ospf 1").prompt).toBe("R1(config-router)#");
     expect(r1.executeLine("router-id 1.1.1").output).toContain("% Invalid input");
-    expect(r1.executeLine("network 10.0.0.0 0.0.0.255 area x").output).toContain("% Invalid input");
-    expect(r1.executeLine("network 10.0.0.0 0.0.0.255").output).toBe("% Incomplete command.\n");
+    expect(r1.executeLine("network 192.0.2.0 0.0.0.255 area x").output).toContain("% Invalid input");
+    expect(r1.executeLine("network 192.0.2.0 0.0.0.255").output).toBe("% Incomplete command.\n");
     expect(r1.complete("net").insert).toBe("work ");
     expect(r1.executeLine("exit").prompt).toBe("R1(config)#");
   });
@@ -166,15 +166,15 @@ describe("OSPF IOS CLI", () => {
   it("withdraws routes after no router ospf and no network", () => {
     const { world, r1, r2 } = buildThreeRouterLineViaCli();
 
-    run(r2, ["configure terminal", "router ospf 1", "no network 10.0.0.0 0.255.255.255 area 0", "end"]);
+    run(r2, ["configure terminal", "router ospf 1", "no network 192.0.2.0 0.255.255.255 area 0", "end"]);
     expect(r2.executeLine("show ip ospf neighbor").output.trimEnd().split("\n")).toHaveLength(1);
-    run(r2, ["configure terminal", "router ospf 1", "network 10.0.0.0 0.255.255.255 area 0", "end"]);
-    expect(world.canPing("R1", "10.23.0.3")).toBe(true);
+    run(r2, ["configure terminal", "router ospf 1", "network 192.0.2.0 0.255.255.255 area 0", "end"]);
+    expect(world.canPing("R1", "192.0.2.6")).toBe(true);
 
     run(r1, ["configure terminal", "no router ospf 1", "end"]);
     expect(world.getDevice("R1")?.config.ospf).toBeUndefined();
     expect(r1.executeLine("show ip route").output).not.toContain("O    ");
-    expect(world.canPing("R1", "10.23.0.3")).toBe(false);
+    expect(world.canPing("R1", "192.0.2.6")).toBe(false);
   });
 });
 
@@ -199,12 +199,12 @@ describe("OSPF control plane", () => {
     const world = buildThreeRouterLine();
     const r1 = world.getOspfSnapshot("R1");
     const route = r1?.routes.find(
-      (candidate) => candidate.destination === "10.23.0.0" && candidate.mask === "255.255.255.252"
+      (candidate) => candidate.destination === "192.0.2.4" && candidate.mask === "255.255.255.252"
     );
 
     expect(route).toEqual(
       expect.objectContaining({
-        nextHop: "10.12.0.2",
+        nextHop: "192.0.2.2",
         outgoingInterface: "GigabitEthernet0/0",
         metric: 20,
         learnedFrom: "2.2.2.2"
@@ -215,10 +215,10 @@ describe("OSPF control plane", () => {
   it("uses learned OSPF routes for bidirectional forwarding", () => {
     const world = buildThreeRouterLine();
 
-    expect(world.canPing("R1", "10.23.0.3")).toBe(true);
-    expect(world.traceRoute("R1", "10.23.0.3")).toEqual({
+    expect(world.canPing("R1", "192.0.2.6")).toBe(true);
+    expect(world.traceRoute("R1", "192.0.2.6")).toEqual({
       ok: true,
-      hops: ["10.12.0.2", "10.23.0.3"]
+      hops: ["192.0.2.2", "192.0.2.6"]
     });
   });
 
@@ -229,7 +229,7 @@ describe("OSPF control plane", () => {
     world.deleteLink("R2-R3");
 
     expect(world.getOspfSnapshot("R1")?.routes).toEqual([]);
-    expect(world.canPing("R1", "10.23.0.3")).toBe(false);
+    expect(world.canPing("R1", "192.0.2.6")).toBe(false);
   });
 
   it("does not form an adjacency across an area mismatch", () => {
@@ -239,6 +239,6 @@ describe("OSPF control plane", () => {
     expect(world.getOspfSnapshot("R2")?.neighbors.map((neighbor) => neighbor.neighborDeviceId)).toEqual([
       "R1"
     ]);
-    expect(world.canPing("R1", "10.23.0.3")).toBe(false);
+    expect(world.canPing("R1", "192.0.2.6")).toBe(false);
   });
 });

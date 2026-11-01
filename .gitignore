@@ -18,3 +18,15 @@ yarn-error.log*
 coverage
 
 *.tsbuildinfo
+
+# privacy-guard: local secrets, logs, and editor state
+!.env.example
+*.log
+logs/
+*.local
+*.local.*
+.vscode/settings.json
+.idea/
+*.pem
+*.key
+secrets/

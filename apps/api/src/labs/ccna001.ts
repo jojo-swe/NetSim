@@ -61,32 +61,32 @@ export function validateCcna001(world: World): LabValidationResult {
     hint: r2?.config.hostname === "R2" ? undefined : "On R2: conf t -> hostname R2"
   });
 
-  const r1Ip = hasIpv4Interface(world, "R1", "10.0.0.1", "255.255.255.0");
+  const r1Ip = hasIpv4Interface(world, "R1", "192.0.2.1", "255.255.255.0");
   objectives.push({
     id: "r1-ip",
-    title: "Configure 10.0.0.1/24 on R1 and no shutdown",
+    title: "Configure 192.0.2.1/24 on R1 and no shutdown",
     passed: r1Ip.ok,
     hint: r1Ip.ok
       ? undefined
-      : "On R1: conf t -> interface g0/0 (or any connected interface) -> ip address 10.0.0.1 255.255.255.0 -> no shutdown",
+      : "On R1: conf t -> interface g0/0 (or any connected interface) -> ip address 192.0.2.1 255.255.255.0 -> no shutdown",
     details: r1Ip.ok ? undefined : r1Ip.reason
   });
 
-  const r2Ip = hasIpv4Interface(world, "R2", "10.0.0.2", "255.255.255.0");
+  const r2Ip = hasIpv4Interface(world, "R2", "192.0.2.2", "255.255.255.0");
   objectives.push({
     id: "r2-ip",
-    title: "Configure 10.0.0.2/24 on R2 and no shutdown",
+    title: "Configure 192.0.2.2/24 on R2 and no shutdown",
     passed: r2Ip.ok,
     hint: r2Ip.ok
       ? undefined
-      : "On R2: conf t -> interface g0/0 (or any connected interface) -> ip address 10.0.0.2 255.255.255.0 -> no shutdown",
+      : "On R2: conf t -> interface g0/0 (or any connected interface) -> ip address 192.0.2.2 255.255.255.0 -> no shutdown",
     details: r2Ip.ok ? undefined : r2Ip.reason
   });
 
-  const pingOk = world.canPing("R1", "10.0.0.2");
+  const pingOk = world.canPing("R1", "192.0.2.2");
   objectives.push({
     id: "ping",
-    title: "Ping from R1 to 10.0.0.2 succeeds",
+    title: "Ping from R1 to 192.0.2.2 succeeds",
     passed: pingOk,
     hint: pingOk
       ? undefined
