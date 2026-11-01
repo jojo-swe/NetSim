@@ -17,7 +17,7 @@
   "dependencies": {
     "@netsim/shared": "*",
     "cors": "^2.8.5",
-    "express": "^4.21.2",
+    "express": "^4.22.3",
     "ws": "^8.18.3"
   },
   "devDependencies": {
