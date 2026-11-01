@@ -41,7 +41,7 @@ A lab contains a name, an importable NetSim topology, and assertions.
       "deviceId": "R1",
       "interfaceName": "GigabitEthernet0/0"
     },
-    { "type": "ping", "from": "PC1", "targetIp": "10.0.0.1" }
+    { "type": "ping", "from": "PC1", "targetIp": "192.0.2.1" }
   ]
 }
 ```

@@ -16,7 +16,7 @@ const baseLab: LabDefinition = {
             "GigabitEthernet0/0": {
               name: "GigabitEthernet0/0",
               adminUp: true,
-              ipv4Address: "10.0.0.1",
+              ipv4Address: "192.0.2.1",
               ipv4Mask: "255.255.255.0"
             }
           }
@@ -28,12 +28,12 @@ const baseLab: LabDefinition = {
         config: {
           hostname: "client-1",
           staticRoutes: [],
-          defaultGateway: "10.0.0.1",
+          defaultGateway: "192.0.2.1",
           interfaces: {
             "GigabitEthernet0/0": {
               name: "GigabitEthernet0/0",
               adminUp: true,
-              ipv4Address: "10.0.0.10",
+              ipv4Address: "192.0.2.10",
               ipv4Mask: "255.255.255.0"
             }
           }
@@ -53,7 +53,7 @@ const baseLab: LabDefinition = {
     { type: "deviceExists", deviceId: "R1" },
     { type: "hostname", deviceId: "R1", expected: "edge-r1" },
     { type: "interfaceUp", deviceId: "R1", interfaceName: "GigabitEthernet0/0" },
-    { type: "ping", from: "PC1", targetIp: "10.0.0.1" }
+    { type: "ping", from: "PC1", targetIp: "192.0.2.1" }
   ]
 };
 
@@ -97,7 +97,7 @@ describe("runLab", () => {
   it("supports negative reachability assertions", () => {
     const result = runLab({
       ...baseLab,
-      assertions: [{ type: "ping", from: "PC1", targetIp: "192.0.2.1", expected: false }]
+      assertions: [{ type: "ping", from: "PC1", targetIp: "198.51.100.1", expected: false }]
     });
 
     expect(result.passed).toBe(true);

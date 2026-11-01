@@ -45,18 +45,18 @@ describe("next-hop reachability", () => {
       cableType: "auto"
     });
 
-    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+    setIf(world, "H1", "GigabitEthernet0/0", "192.0.2.2", "255.255.255.0", true);
     const h1 = world.getDevice("H1")!;
-    h1.config.defaultGateway = "10.0.99.99";
+    h1.config.defaultGateway = "10.x.y.z";
 
-    setIf(world, "R1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-    setIf(world, "R1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/0", "192.0.2.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/1", "198.51.100.1", "255.255.255.0", true);
 
-    setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+    setIf(world, "H2", "GigabitEthernet0/0", "198.51.100.2", "255.255.255.0", true);
     const h2 = world.getDevice("H2")!;
-    h2.config.defaultGateway = "10.0.1.1";
+    h2.config.defaultGateway = "198.51.100.1";
 
-    expect(world.canPing("H1", "10.0.1.2")).toBe(false);
+    expect(world.canPing("H1", "198.51.100.2")).toBe(false);
 
     const r = showIpRoute(world, "H1");
     expect(r).toContain("Gateway of last resort is not set");
@@ -80,28 +80,28 @@ describe("next-hop reachability", () => {
       cableType: "auto"
     });
 
-    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+    setIf(world, "H1", "GigabitEthernet0/0", "192.0.2.2", "255.255.255.0", true);
     const h1 = world.getDevice("H1")!;
-    h1.config.defaultGateway = "10.0.0.1";
-    h1.config.staticRoutes.push({ destination: "0.0.0.0", mask: "0.0.0.0", nextHop: "192.168.99.99" });
+    h1.config.defaultGateway = "192.0.2.1";
+    h1.config.staticRoutes.push({ destination: "0.0.0.0", mask: "0.0.0.0", nextHop: "10.x.y.z" });
 
-    setIf(world, "R1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-    setIf(world, "R1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/0", "192.0.2.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/1", "198.51.100.1", "255.255.255.0", true);
 
-    setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
+    setIf(world, "H2", "GigabitEthernet0/0", "198.51.100.2", "255.255.255.0", true);
     const h2 = world.getDevice("H2")!;
-    h2.config.defaultGateway = "10.0.1.1";
+    h2.config.defaultGateway = "198.51.100.1";
 
-    expect(world.canPing("H1", "10.0.1.2")).toBe(true);
+    expect(world.canPing("H1", "198.51.100.2")).toBe(true);
 
-    const tr = world.traceRoute("H1", "10.0.1.2");
+    const tr = world.traceRoute("H1", "198.51.100.2");
     expect(tr.ok).toBe(true);
-    expect(tr.hops).toEqual(["10.0.0.1", "10.0.1.2"]);
+    expect(tr.hops).toEqual(["192.0.2.1", "198.51.100.2"]);
 
     const r = showIpRoute(world, "H1");
-    expect(r).toContain("Gateway of last resort is 10.0.0.1");
+    expect(r).toContain("Gateway of last resort is 192.0.2.1");
     expect(r).toContain("S*   0.0.0.0/0");
-    expect(r).not.toContain("192.168.99.99");
+    expect(r).not.toContain("10.x.y.z");
   });
 
   it("unreachable static route does not override reachable static route", () => {
@@ -127,35 +127,35 @@ describe("next-hop reachability", () => {
       cableType: "auto"
     });
 
-    setIf(world, "H1", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-    world.getDevice("H1")!.config.defaultGateway = "10.0.1.1";
+    setIf(world, "H1", "GigabitEthernet0/0", "198.51.100.2", "255.255.255.0", true);
+    world.getDevice("H1")!.config.defaultGateway = "198.51.100.1";
 
-    setIf(world, "R1", "GigabitEthernet0/0", "10.0.1.1", "255.255.255.0", true);
-    setIf(world, "R1", "GigabitEthernet0/1", "10.0.12.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/0", "198.51.100.1", "255.255.255.0", true);
+    setIf(world, "R1", "GigabitEthernet0/1", "203.0.113.1", "255.255.255.0", true);
     const r1 = world.getDevice("R1")!;
-    r1.config.staticRoutes.push({ destination: "10.0.2.0", mask: "255.255.255.0", nextHop: "192.168.99.99" });
-    r1.config.staticRoutes.push({ destination: "10.0.2.0", mask: "255.255.255.0", nextHop: "10.0.12.2" });
+    r1.config.staticRoutes.push({ destination: "192.0.2.0", mask: "255.255.255.0", nextHop: "10.x.y.z" });
+    r1.config.staticRoutes.push({ destination: "192.0.2.0", mask: "255.255.255.0", nextHop: "203.0.113.2" });
 
-    setIf(world, "R2", "GigabitEthernet0/0", "10.0.12.2", "255.255.255.0", true);
-    setIf(world, "R2", "GigabitEthernet0/1", "10.0.2.1", "255.255.255.0", true);
+    setIf(world, "R2", "GigabitEthernet0/0", "203.0.113.2", "255.255.255.0", true);
+    setIf(world, "R2", "GigabitEthernet0/1", "192.0.2.1", "255.255.255.0", true);
     world.getDevice("R2")!.config.staticRoutes.push({
-      destination: "10.0.1.0",
+      destination: "198.51.100.0",
       mask: "255.255.255.0",
-      nextHop: "10.0.12.1"
+      nextHop: "203.0.113.1"
     });
 
-    setIf(world, "H2", "GigabitEthernet0/0", "10.0.2.2", "255.255.255.0", true);
-    world.getDevice("H2")!.config.defaultGateway = "10.0.2.1";
+    setIf(world, "H2", "GigabitEthernet0/0", "192.0.2.2", "255.255.255.0", true);
+    world.getDevice("H2")!.config.defaultGateway = "192.0.2.1";
 
-    expect(world.canPing("H1", "10.0.2.2")).toBe(true);
+    expect(world.canPing("H1", "192.0.2.2")).toBe(true);
 
-    const tr = world.traceRoute("H1", "10.0.2.2");
+    const tr = world.traceRoute("H1", "192.0.2.2");
     expect(tr.ok).toBe(true);
-    expect(tr.hops).toEqual(["10.0.1.1", "10.0.12.2", "10.0.2.2"]);
+    expect(tr.hops).toEqual(["198.51.100.1", "203.0.113.2", "192.0.2.2"]);
 
     const r = showIpRoute(world, "R1");
-    expect(r).toContain("10.0.12.2");
-    expect(r).not.toContain("192.168.99.99");
+    expect(r).toContain("203.0.113.2");
+    expect(r).not.toContain("10.x.y.z");
   });
 
   it("l3switch bridges l2 between hosts", () => {
@@ -175,10 +175,10 @@ describe("next-hop reachability", () => {
       cableType: "auto"
     });
 
-    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-    setIf(world, "H2", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
+    setIf(world, "H1", "GigabitEthernet0/0", "192.0.2.1", "255.255.255.0", true);
+    setIf(world, "H2", "GigabitEthernet0/0", "192.0.2.2", "255.255.255.0", true);
 
-    expect(world.canPing("H1", "10.0.0.2")).toBe(true);
+    expect(world.canPing("H1", "192.0.2.2")).toBe(true);
   });
 
   it("l3switch routes l3 between subnets", () => {
@@ -198,19 +198,19 @@ describe("next-hop reachability", () => {
       cableType: "auto"
     });
 
-    setIf(world, "H1", "GigabitEthernet0/0", "10.0.0.2", "255.255.255.0", true);
-    world.getDevice("H1")!.config.defaultGateway = "10.0.0.1";
+    setIf(world, "H1", "GigabitEthernet0/0", "192.0.2.2", "255.255.255.0", true);
+    world.getDevice("H1")!.config.defaultGateway = "192.0.2.1";
 
-    setIf(world, "L3SW1", "GigabitEthernet0/0", "10.0.0.1", "255.255.255.0", true);
-    setIf(world, "L3SW1", "GigabitEthernet0/1", "10.0.1.1", "255.255.255.0", true);
+    setIf(world, "L3SW1", "GigabitEthernet0/0", "192.0.2.1", "255.255.255.0", true);
+    setIf(world, "L3SW1", "GigabitEthernet0/1", "198.51.100.1", "255.255.255.0", true);
 
-    setIf(world, "H2", "GigabitEthernet0/0", "10.0.1.2", "255.255.255.0", true);
-    world.getDevice("H2")!.config.defaultGateway = "10.0.1.1";
+    setIf(world, "H2", "GigabitEthernet0/0", "198.51.100.2", "255.255.255.0", true);
+    world.getDevice("H2")!.config.defaultGateway = "198.51.100.1";
 
-    expect(world.canPing("H1", "10.0.1.2")).toBe(true);
+    expect(world.canPing("H1", "198.51.100.2")).toBe(true);
 
-    const tr = world.traceRoute("H1", "10.0.1.2");
+    const tr = world.traceRoute("H1", "198.51.100.2");
     expect(tr.ok).toBe(true);
-    expect(tr.hops).toEqual(["10.0.0.1", "10.0.1.2"]);
+    expect(tr.hops).toEqual(["192.0.2.1", "198.51.100.2"]);
   });
 });

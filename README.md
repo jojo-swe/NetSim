@@ -27,23 +27,23 @@ Built for students and professionals who want to practice Cisco-style networking
 R1>enable
 R1#configure terminal
 R1(config)#interface g0/0
-R1(config-if)#ip address 10.12.0.1 255.255.255.252
+R1(config-if)#ip address 192.0.2.1 255.255.255.252
 R1(config-if)#no shutdown
 R1(config-if)#exit
 R1(config)#router ospf 1
 R1(config-router)#router-id 1.1.1.1
-R1(config-router)#network 10.0.0.0 0.255.255.255 area 0
+R1(config-router)#network 192.0.2.0 0.255.255.255 area 0
 R1(config-router)#end
 R1#show ip ospf neighbor
 Neighbor ID     Pri   State           Address         Interface
-2.2.2.2         1     FULL/  -        10.12.0.2       GigabitEthernet0/0
+2.2.2.2         1     FULL/  -        192.0.2.2       GigabitEthernet0/0
 R1#show ip route
 Codes: C - connected, S - static, O - OSPF
 
 Gateway of last resort is not set
 
-C    10.12.0.0/30 is directly connected, GigabitEthernet0/0
-O    10.23.0.0/30 [110/11] via 10.12.0.2, GigabitEthernet0/0
+C    192.0.2.0/30 is directly connected, GigabitEthernet0/0
+O    192.0.2.4/30 [110/11] via 192.0.2.2, GigabitEthernet0/0
 ```
 
 ## Roadmap

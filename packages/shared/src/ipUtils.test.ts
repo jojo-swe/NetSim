@@ -12,7 +12,7 @@ import {
 describe("ipv4ToInt", () => {
   it("converts valid IPs", () => {
     expect(ipv4ToInt("0.0.0.0")).toBe(0);
-    expect(ipv4ToInt("10.0.0.1")).toBe(0x0a000001);
+    expect(ipv4ToInt("192.0.2.1")).toBe(0xc0000201);
     expect(ipv4ToInt("255.255.255.255")).toBe(0xffffffff);
   });
 
@@ -27,7 +27,7 @@ describe("ipv4ToInt", () => {
 describe("intToIpv4", () => {
   it("converts valid integers", () => {
     expect(intToIpv4(0)).toBe("0.0.0.0");
-    expect(intToIpv4(0x0a000001)).toBe("10.0.0.1");
+    expect(intToIpv4(0xc0000201)).toBe("192.0.2.1");
     expect(intToIpv4(0xffffffff)).toBe("255.255.255.255");
   });
 });
@@ -63,32 +63,32 @@ describe("prefixLenToMask", () => {
 
 describe("inSameSubnet", () => {
   it("returns true for same subnet", () => {
-    expect(inSameSubnet("10.0.0.1", "255.255.255.0", "10.0.0.2")).toBe(true);
+    expect(inSameSubnet("192.0.2.1", "255.255.255.0", "192.0.2.2")).toBe(true);
   });
 
   it("returns false for different subnets", () => {
-    expect(inSameSubnet("10.0.0.1", "255.255.255.0", "10.0.1.1")).toBe(false);
+    expect(inSameSubnet("192.0.2.1", "255.255.255.0", "198.51.100.1")).toBe(false);
   });
 
   it("returns false for invalid IPs", () => {
-    expect(inSameSubnet("abc", "255.255.255.0", "10.0.0.1")).toBe(false);
+    expect(inSameSubnet("abc", "255.255.255.0", "192.0.2.1")).toBe(false);
   });
 });
 
 describe("networkAddress", () => {
   it("computes network address", () => {
-    expect(networkAddress("10.0.0.5", "255.255.255.0")).toBe("10.0.0.0");
-    expect(networkAddress("192.168.1.100", "255.255.255.192")).toBe("192.168.1.64");
+    expect(networkAddress("192.0.2.5", "255.255.255.0")).toBe("192.0.2.0");
+    expect(networkAddress("198.51.100.100", "255.255.255.192")).toBe("198.51.100.64");
   });
 });
 
 describe("ipMatchesDestination", () => {
   it("matches within subnet", () => {
-    expect(ipMatchesDestination("10.0.0.5", "10.0.0.0", "255.255.255.0")).toBe(true);
+    expect(ipMatchesDestination("192.0.2.5", "192.0.2.0", "255.255.255.0")).toBe(true);
   });
 
   it("does not match outside subnet", () => {
-    expect(ipMatchesDestination("10.0.1.5", "10.0.0.0", "255.255.255.0")).toBe(false);
+    expect(ipMatchesDestination("198.51.100.5", "192.0.2.0", "255.255.255.0")).toBe(false);
   });
 
   it("matches default route", () => {

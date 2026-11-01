@@ -85,80 +85,80 @@ export function validateCcna002(world: World): LabValidationResult {
     hint: r3?.config.hostname === "R3" ? undefined : "On R3: conf t -> hostname R3"
   });
 
-  const r1If = hasIpv4Interface(world, "R1", "10.0.12.1", "255.255.255.252");
+  const r1If = hasIpv4Interface(world, "R1", "192.0.2.1", "255.255.255.252");
   objectives.push({
     id: "r1-p2p-ip",
-    title: "Configure 10.0.12.1/30 on R1 and no shutdown",
+    title: "Configure 192.0.2.1/30 on R1 and no shutdown",
     passed: r1If.ok,
     hint: r1If.ok
       ? undefined
-      : "On R1: conf t -> interface g0/0 (or any interface connected to R2) -> ip address 10.0.12.1 255.255.255.252 -> no shutdown",
+      : "On R1: conf t -> interface g0/0 (or any interface connected to R2) -> ip address 192.0.2.1 255.255.255.252 -> no shutdown",
     details: r1If.ok ? undefined : r1If.reason
   });
 
-  const r2IfA = hasIpv4Interface(world, "R2", "10.0.12.2", "255.255.255.252");
-  const r2IfB = hasIpv4Interface(world, "R2", "10.0.23.1", "255.255.255.252");
+  const r2IfA = hasIpv4Interface(world, "R2", "192.0.2.2", "255.255.255.252");
+  const r2IfB = hasIpv4Interface(world, "R2", "198.51.100.1", "255.255.255.252");
   objectives.push({
     id: "r2-p2p-ips",
-    title: "Configure 10.0.12.2/30 and 10.0.23.1/30 on R2 and no shutdown",
+    title: "Configure 192.0.2.2/30 and 198.51.100.1/30 on R2 and no shutdown",
     passed: r2IfA.ok && r2IfB.ok,
     hint:
       r2IfA.ok && r2IfB.ok
         ? undefined
-        : "On R2: conf t -> configure one interface as 10.0.12.2/30 (toward R1) and another as 10.0.23.1/30 (toward R3), then no shutdown",
+        : "On R2: conf t -> configure one interface as 192.0.2.2/30 (toward R1) and another as 198.51.100.1/30 (toward R3), then no shutdown",
     details:
       r2IfA.ok && r2IfB.ok
         ? undefined
         : `Toward R1: ${r2IfA.reason ?? "missing"}; toward R3: ${r2IfB.reason ?? "missing"}`
   });
 
-  const r3IfA = hasIpv4Interface(world, "R3", "10.0.23.2", "255.255.255.252");
-  const r3Lan = hasIpv4Interface(world, "R3", "192.168.3.1", "255.255.255.0");
+  const r3IfA = hasIpv4Interface(world, "R3", "198.51.100.2", "255.255.255.252");
+  const r3Lan = hasIpv4Interface(world, "R3", "203.0.113.1", "255.255.255.0");
   objectives.push({
     id: "r3-ips",
-    title: "Configure 10.0.23.2/30 and 192.168.3.1/24 on R3 and no shutdown",
+    title: "Configure 198.51.100.2/30 and 203.0.113.1/24 on R3 and no shutdown",
     passed: r3IfA.ok && r3Lan.ok,
     hint:
       r3IfA.ok && r3Lan.ok
         ? undefined
-        : "On R3: conf t -> configure one interface as 10.0.23.2/30 (toward R2) and another as 192.168.3.1/24 (LAN). Connect the LAN interface to a switch so it comes up.",
+        : "On R3: conf t -> configure one interface as 198.51.100.2/30 (toward R2) and another as 203.0.113.1/24 (LAN). Connect the LAN interface to a switch so it comes up.",
     details:
       r3IfA.ok && r3Lan.ok
         ? undefined
         : `Toward R2: ${r3IfA.reason ?? "missing"}; LAN: ${r3Lan.reason ?? "missing"}`
   });
 
-  const r1Route = hasStaticRoute(world, "R1", "192.168.3.0", "255.255.255.0", "10.0.12.2");
+  const r1Route = hasStaticRoute(world, "R1", "203.0.113.0", "255.255.255.0", "192.0.2.2");
   objectives.push({
     id: "r1-static",
-    title: "Configure static route on R1 to 192.168.3.0/24 via 10.0.12.2",
+    title: "Configure static route on R1 to 203.0.113.0/24 via 192.0.2.2",
     passed: r1Route.ok,
-    hint: r1Route.ok ? undefined : "On R1: conf t -> ip route 192.168.3.0 255.255.255.0 10.0.12.2",
+    hint: r1Route.ok ? undefined : "On R1: conf t -> ip route 203.0.113.0 255.255.255.0 192.0.2.2",
     details: r1Route.ok ? undefined : r1Route.reason
   });
 
-  const r2Route = hasStaticRoute(world, "R2", "192.168.3.0", "255.255.255.0", "10.0.23.2");
+  const r2Route = hasStaticRoute(world, "R2", "203.0.113.0", "255.255.255.0", "198.51.100.2");
   objectives.push({
     id: "r2-static",
-    title: "Configure static route on R2 to 192.168.3.0/24 via 10.0.23.2",
+    title: "Configure static route on R2 to 203.0.113.0/24 via 198.51.100.2",
     passed: r2Route.ok,
-    hint: r2Route.ok ? undefined : "On R2: conf t -> ip route 192.168.3.0 255.255.255.0 10.0.23.2",
+    hint: r2Route.ok ? undefined : "On R2: conf t -> ip route 203.0.113.0 255.255.255.0 198.51.100.2",
     details: r2Route.ok ? undefined : r2Route.reason
   });
 
-  const r3Route = hasStaticRoute(world, "R3", "10.0.12.0", "255.255.255.252", "10.0.23.1");
+  const r3Route = hasStaticRoute(world, "R3", "192.0.2.0", "255.255.255.252", "198.51.100.1");
   objectives.push({
     id: "r3-static",
-    title: "Configure return static route on R3 to 10.0.12.0/30 via 10.0.23.1",
+    title: "Configure return static route on R3 to 192.0.2.0/30 via 198.51.100.1",
     passed: r3Route.ok,
-    hint: r3Route.ok ? undefined : "On R3: conf t -> ip route 10.0.12.0 255.255.255.252 10.0.23.1",
+    hint: r3Route.ok ? undefined : "On R3: conf t -> ip route 192.0.2.0 255.255.255.252 198.51.100.1",
     details: r3Route.ok ? undefined : r3Route.reason
   });
 
-  const pingOk = world.canPing("R1", "192.168.3.1");
+  const pingOk = world.canPing("R1", "203.0.113.1");
   objectives.push({
     id: "ping",
-    title: "Ping from R1 to 192.168.3.1 succeeds",
+    title: "Ping from R1 to 203.0.113.1 succeeds",
     passed: pingOk,
     hint: pingOk
       ? undefined

@@ -579,7 +579,7 @@ export function PortsPanel(props: PortsPanelProps) {
                           <input
                             value={ipEditor.ipv4Address}
                             onChange={(e) => setIpEditor((prev) => (prev ? { ...prev, ipv4Address: e.target.value } : prev))}
-                            placeholder="IPv4 (e.g. 10.0.0.2)"
+                            placeholder="IPv4 (e.g. 192.0.2.2)"
                             style={{ width: "100%", padding: 8, borderRadius: 8, background: "var(--bg-app)", color: "var(--text-primary)", border: "1px solid rgba(148, 163, 184, 0.18)" }}
                           />
                           <input

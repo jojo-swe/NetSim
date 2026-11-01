@@ -364,7 +364,7 @@ export class LinuxSession {
   }
 
   private ipAddrAdd(args: string[]): boolean {
-    // ip addr add 10.0.0.2/24 dev eth0
+    // ip addr add 192.0.2.2/24 dev eth0
     const addr = args[0];
     if (!addr) return false;
 
@@ -389,7 +389,7 @@ export class LinuxSession {
   }
 
   private ipAddrDel(args: string[]): boolean {
-    // ip addr del 10.0.0.2/24 dev eth0
+    // ip addr del 192.0.2.2/24 dev eth0
     const addr = args[0];
     if (!addr) return false;
 
@@ -469,8 +469,8 @@ export class LinuxSession {
   }
 
   private ipRouteAdd(args: string[]): boolean {
-    // ip route add default via 10.0.0.1
-    // ip route add 10.0.2.0/24 via 10.0.0.1
+    // ip route add default via 192.0.2.1
+    // ip route add 198.51.100.0/24 via 192.0.2.1
     const destRaw = (args[0] ?? "").trim();
     const destLower = destRaw.toLowerCase();
 
@@ -507,7 +507,7 @@ export class LinuxSession {
 
   private ipRouteDel(args: string[]): boolean {
     // ip route del default
-    // ip route del 10.0.2.0/24 via 10.0.0.1
+    // ip route del 198.51.100.0/24 via 192.0.2.1
     const destRaw = (args[0] ?? "").trim();
     const destLower = destRaw.toLowerCase();
 
