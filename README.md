@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/assets/logo.svg" alt="NetSim logo" width="128"></p>
+
 # NetSim
 
 [![CI](https://github.com/jojo-swe/NetSim/actions/workflows/ci.yml/badge.svg)](https://github.com/jojo-swe/NetSim/actions/workflows/ci.yml)
